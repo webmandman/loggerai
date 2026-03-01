@@ -11,19 +11,34 @@ export function useSpeechRecognition() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  const mimeRef = useRef({ mimeType: "audio/webm", ext: "webm" });
+  const recordStartRef = useRef(0);
 
   const startListening = useCallback(async () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      return;
+    }
+
     setError(null);
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-          ? "audio/webm;codecs=opus"
-          : "audio/webm",
-      });
+      const candidates = [
+        { mimeType: "audio/webm;codecs=opus", ext: "webm" },
+        { mimeType: "audio/webm", ext: "webm" },
+        { mimeType: "audio/ogg;codecs=opus", ext: "ogg" },
+        { mimeType: "audio/mp4", ext: "m4a" },
+        { mimeType: "audio/wav", ext: "wav" },
+      ];
+
+      const picked = candidates.find((c) => MediaRecorder.isTypeSupported(c.mimeType))
+        ?? { mimeType: "", ext: "webm" };
+
+      mimeRef.current = picked;
+
+      const mediaRecorder = new MediaRecorder(stream, picked.mimeType ? { mimeType: picked.mimeType } : undefined);
 
       chunksRef.current = [];
 
@@ -37,10 +52,13 @@ export function useSpeechRecognition() {
         stream.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
 
-        const audioBlob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const { mimeType, ext } = mimeRef.current;
+        const blobType = mimeType || "audio/webm";
+        const audioBlob = new Blob(chunksRef.current, { type: blobType });
         chunksRef.current = [];
 
-        if (audioBlob.size < 1000) {
+        const durationMs = Date.now() - recordStartRef.current;
+        if (audioBlob.size < 1000 || durationMs < 500) {
           setIsListening(false);
           return;
         }
@@ -50,7 +68,7 @@ export function useSpeechRecognition() {
           const formData = new FormData();
           formData.append(
             "audio",
-            new File([audioBlob], "recording.webm", { type: "audio/webm" })
+            new File([audioBlob], `recording.${ext}`, { type: blobType })
           );
 
           const res = await fetch("/api/transcribe", {
@@ -81,6 +99,7 @@ export function useSpeechRecognition() {
       };
 
       mediaRecorderRef.current = mediaRecorder;
+      recordStartRef.current = Date.now();
       mediaRecorder.start(1000);
       setIsListening(true);
     } catch (err) {

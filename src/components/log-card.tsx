@@ -1,11 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   ChevronDown,
   ChevronUp,
   Mic,
   Keyboard,
+  Trash2,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -87,12 +91,18 @@ const MOOD_EMOJI: Record<string, string> = {
 
 interface LogCardProps {
   entry: LogEntry;
-  highlighted?: boolean;
   onActionItemToggle?: (entryId: string, index: number, done: boolean) => void;
+  onDelete?: (entryId: string) => void;
+  onEditSummary?: (entryId: string, summary: string) => void;
+  className?: string;
 }
 
-export function LogCard({ entry, highlighted = false, onActionItemToggle }: LogCardProps) {
+export function LogCard({ entry, onActionItemToggle, onDelete, onEditSummary, className }: LogCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(entry.summary);
+  const editInputRef = useRef<HTMLInputElement>(null);
 
   const date = new Date(entry.createdAt);
   const timeStr = date.toLocaleTimeString([], {
@@ -105,20 +115,57 @@ export function LogCard({ entry, highlighted = false, onActionItemToggle }: LogC
     year: "numeric",
   });
 
+  useEffect(() => {
+    if (isEditing && editInputRef.current) editInputRef.current.focus();
+  }, [isEditing]);
+
+  const handleSaveEdit = () => {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== entry.summary && onEditSummary) {
+      onEditSummary(entry.id, trimmed);
+    }
+    setIsEditing(false);
+  };
+
   return (
     <Card
-      className={`transition-all ${
-        highlighted
-          ? "ring-2 ring-primary shadow-lg"
-          : "hover:shadow-md"
-      }`}
+      className={`transition-all hover:shadow-md ${className || ""}`}
     >
       <CardHeader className="pb-2 pt-4 px-4">
         <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium leading-snug">
-              {entry.summary}
-            </p>
+          <div className="flex-1 min-w-0 group/summary">
+            {isEditing ? (
+              <div className="flex items-center gap-1">
+                <input
+                  ref={editInputRef}
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveEdit();
+                    if (e.key === "Escape") { setIsEditing(false); setEditValue(entry.summary); }
+                  }}
+                  className="flex-1 text-sm font-medium bg-transparent border-b border-primary outline-none py-0.5"
+                />
+                <button onClick={handleSaveEdit} className="p-0.5 text-primary hover:text-primary/80">
+                  <Check className="h-3.5 w-3.5" />
+                </button>
+                <button onClick={() => { setIsEditing(false); setEditValue(entry.summary); }} className="p-0.5 text-muted-foreground hover:text-foreground">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <p className="text-sm font-medium leading-snug">
+                {entry.summary}
+                {onEditSummary && (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="inline-flex ml-1.5 opacity-0 group-hover/summary:opacity-100 transition-opacity text-muted-foreground hover:text-foreground align-middle"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                )}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {entry.mood && MOOD_EMOJI[entry.mood] && (
@@ -192,10 +239,30 @@ export function LogCard({ entry, highlighted = false, onActionItemToggle }: LogC
         </div>
 
         {expanded && (
-          <div className="pt-2 border-t">
+          <div className="pt-2 border-t space-y-2">
             <p className="text-sm text-muted-foreground whitespace-pre-wrap">
               {entry.rawInput}
             </p>
+            {onDelete && (
+              <div className="flex justify-end">
+                {confirmDelete ? (
+                  <div className="flex items-center gap-2 animate-in fade-in duration-150">
+                    <span className="text-xs text-muted-foreground">Delete this entry?</span>
+                    <Button variant="destructive" size="sm" className="h-6 px-2 text-xs" onClick={() => { onDelete(entry.id); setConfirmDelete(false); }}>
+                      Yes, delete
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setConfirmDelete(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive" onClick={() => setConfirmDelete(true)}>
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    Delete
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </CardContent>

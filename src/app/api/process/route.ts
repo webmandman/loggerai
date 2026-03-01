@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { classifyIntent, processLogEntry, queryLogs } from "@/lib/ai";
+import { classifyIntent, processLogEntry } from "@/lib/ai";
 import { normalizeActionItems, parseLocalDate } from "@/lib/utils";
 
 export async function POST(request: NextRequest) {
@@ -27,52 +27,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (intent === "query") {
-    try {
-      const entries = await prisma.logEntry.findMany({
-        orderBy: { createdAt: "desc" },
-        take: 100,
-        select: {
-          id: true,
-          rawInput: true,
-          summary: true,
-          category: true,
-          tags: true,
-          actionItems: true,
-          metadata: true,
-          createdAt: true,
-        },
-      });
-
-      const result = await queryLogs(trimmed, entries);
-
-      const relevantEntries = result.relevantEntryIds.length
-        ? await prisma.logEntry.findMany({
-            where: { id: { in: result.relevantEntryIds } },
-            orderBy: { createdAt: "desc" },
-          })
-        : [];
-
-      const serializedEntries = relevantEntries.map((entry) => ({
-        ...entry,
-        tags: JSON.parse(entry.tags),
-        actionItems: normalizeActionItems(JSON.parse(entry.actionItems)),
-        metadata: JSON.parse(entry.metadata || "{}"),
-        createdAt: entry.createdAt.toISOString(),
-        updatedAt: entry.updatedAt.toISOString(),
-      }));
-
-      return NextResponse.json({
-        type: "query",
-        answer: result.answer,
-        entries: serializedEntries,
-      });
-    } catch (err) {
-      console.error("Query failed:", err);
-      return NextResponse.json(
-        { error: "Query processing failed. Please try again." },
-        { status: 500 }
-      );
-    }
+    return NextResponse.json({ type: "query_stream" });
   }
 
   // intent === "log"

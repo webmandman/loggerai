@@ -5,6 +5,26 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const VALID_EXTENSIONS = new Set(["flac", "m4a", "mp3", "mp4", "mpeg", "mpga", "oga", "ogg", "wav", "webm"]);
+
+function inferExtension(file: File): string {
+  const fromName = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (VALID_EXTENSIONS.has(fromName)) return fromName;
+
+  const typeMap: Record<string, string> = {
+    "audio/webm": "webm",
+    "audio/ogg": "ogg",
+    "audio/mp4": "m4a",
+    "audio/mpeg": "mp3",
+    "audio/wav": "wav",
+    "audio/flac": "flac",
+    "audio/x-m4a": "m4a",
+  };
+
+  const base = file.type.split(";")[0].trim();
+  return typeMap[base] || "webm";
+}
+
 export async function POST(request: NextRequest) {
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json(
@@ -23,9 +43,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const ext = inferExtension(audioFile);
+  const properFile = new File([audioFile], `recording.${ext}`, {
+    type: audioFile.type || `audio/${ext}`,
+  });
+
   try {
     const transcription = await openai.audio.transcriptions.create({
-      file: audioFile,
+      file: properFile,
       model: "whisper-1",
       language: "en",
     });

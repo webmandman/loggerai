@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+import { Loader2 } from "lucide-react";
 import { LogCard } from "@/components/log-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { LogEntry } from "@/types";
@@ -7,16 +9,41 @@ import type { LogEntry } from "@/types";
 interface LogFeedProps {
   entries: LogEntry[];
   isLoading: boolean;
-  highlightedIds?: string[];
   onActionItemToggle?: (entryId: string, index: number, done: boolean) => void;
+  onDeleteEntry?: (entryId: string) => void;
+  onEditSummary?: (entryId: string, summary: string) => void;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  newEntryIds?: string[];
 }
 
 export function LogFeed({
   entries,
   isLoading,
-  highlightedIds = [],
   onActionItemToggle,
+  onDeleteEntry,
+  onEditSummary,
+  onLoadMore,
+  hasMore = false,
+  isLoadingMore = false,
+  newEntryIds,
 }: LogFeedProps) {
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!onLoadMore || !hasMore) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      ([e]) => { if (e.isIntersecting) onLoadMore(); },
+      { rootMargin: "200px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onLoadMore, hasMore]);
+
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -45,7 +72,7 @@ export function LogFeed({
       <div className="text-center py-12">
         <p className="text-muted-foreground text-lg">No log entries yet</p>
         <p className="text-muted-foreground text-sm mt-1">
-          Start by typing or speaking your first entry above
+          Tap the mic button to record your first entry
         </p>
       </div>
     );
@@ -57,10 +84,17 @@ export function LogFeed({
         <LogCard
           key={entry.id}
           entry={entry}
-          highlighted={highlightedIds.includes(entry.id)}
           onActionItemToggle={onActionItemToggle}
+          onDelete={onDeleteEntry}
+          onEditSummary={onEditSummary}
+          className={newEntryIds?.includes(entry.id) ? "animate-in fade-in slide-in-from-top-2 duration-500" : undefined}
         />
       ))}
+      {hasMore && (
+        <div ref={sentinelRef} className="flex justify-center py-4">
+          {isLoadingMore && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+        </div>
+      )}
     </div>
   );
 }

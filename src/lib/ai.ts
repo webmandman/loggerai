@@ -168,3 +168,102 @@ Return ONLY valid JSON, no markdown formatting or code blocks.`,
     };
   }
 }
+
+function buildQueryPrompt(
+  question: string,
+  entries: Array<{
+    id: string;
+    rawInput: string;
+    summary: string;
+    category: string;
+    tags: string;
+    metadata: string;
+    createdAt: Date;
+  }>
+): string {
+  const entriesContext = entries
+    .map(
+      (e) =>
+        `[ID: ${e.id}] (${toLocalDateStr(e.createdAt)}) [${e.category}] ${e.summary} | Metadata: ${e.metadata} | Raw: ${e.rawInput}`
+    )
+    .join("\n");
+
+  return `You are an AI assistant helping a user search through their personal log entries. Answer the user's question based on the log entries provided.
+
+Log entries:
+"""
+${entriesContext}
+"""
+
+User question: "${question}"
+
+IMPORTANT: Structure your response in exactly this format:
+1. First, write your natural language answer (this will be streamed to the user)
+2. Then on a new line, write exactly: ---ENTRY_IDS---
+3. Then on a new line, write a JSON array of relevant entry IDs, e.g. ["id1","id2"]
+
+If no entries are relevant, write an empty array [].`;
+}
+
+export function queryLogsStreaming(
+  question: string,
+  entries: Array<{
+    id: string;
+    rawInput: string;
+    summary: string;
+    category: string;
+    tags: string;
+    actionItems: string;
+    metadata: string;
+    createdAt: Date;
+  }>
+): ReadableStream<Uint8Array> {
+  const prompt = buildQueryPrompt(question, entries);
+  const encoder = new TextEncoder();
+
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        const stream = anthropic.messages.stream({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1024,
+          messages: [{ role: "user", content: prompt }],
+        });
+
+        let fullText = "";
+
+        stream.on("text", (text) => {
+          fullText += text;
+          const markerIdx = fullText.indexOf("---ENTRY_IDS---");
+          if (markerIdx === -1) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "delta", text })}\n\n`));
+          }
+        });
+
+        const finalMessage = await stream.finalMessage();
+        const fullContent = finalMessage.content[0].type === "text" ? finalMessage.content[0].text : fullText;
+
+        let relevantEntryIds: string[] = [];
+        const markerIdx = fullContent.indexOf("---ENTRY_IDS---");
+        if (markerIdx !== -1) {
+          const idsStr = fullContent.slice(markerIdx + "---ENTRY_IDS---".length).trim();
+          try {
+            const parsed = JSON.parse(idsStr);
+            if (Array.isArray(parsed)) relevantEntryIds = parsed;
+          } catch { /* ignore */ }
+        }
+
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ type: "done", relevantEntryIds })}\n\n`)
+        );
+        controller.close();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Streaming failed";
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ type: "error", message: msg })}\n\n`)
+        );
+        controller.close();
+      }
+    },
+  });
+}

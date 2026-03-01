@@ -13,7 +13,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useSpeechRecognition } from "@/lib/speech";
+import { useSpeech } from "@/lib/speech-context";
 import type { LogEntry, InputMethod } from "@/types";
 
 interface UnifiedInputProps {
@@ -21,6 +21,7 @@ interface UnifiedInputProps {
   onQueryResult: (answer: string, entries: LogEntry[]) => void;
   onClearQuery: () => void;
   hasActiveQuery: boolean;
+  onStreamingAnswer?: (text: string) => void;
 }
 
 type ProcessingPhase = null | "classifying" | "logging" | "searching";
@@ -30,6 +31,7 @@ export function UnifiedInput({
   onQueryResult,
   onClearQuery,
   hasActiveQuery,
+  onStreamingAnswer,
 }: UnifiedInputProps) {
   const [text, setText] = useState("");
   const [inputMethod, setInputMethod] = useState<InputMethod>("text");
@@ -38,6 +40,12 @@ export function UnifiedInput({
   const [isFocused, setIsFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const holdingRef = useRef(false);
+  const isTouchDevice = useRef(false);
+  const [tapRecording, setTapRecording] = useState(false);
+
+  useEffect(() => {
+    isTouchDevice.current = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+  }, []);
 
   const {
     isListening,
@@ -49,7 +57,7 @@ export function UnifiedInput({
     stopListening,
     resetTranscript,
     clearError: clearSpeechError,
-  } = useSpeechRecognition();
+  } = useSpeech();
 
   useEffect(() => {
     if (transcript) {
@@ -82,7 +90,49 @@ export function UnifiedInput({
         throw new Error(data.error || "Something went wrong");
       }
 
-      if (data.type === "query") {
+      if (data.type === "query_stream") {
+        setProcessingPhase("searching");
+        let answer = "";
+
+        const streamRes = await fetch("/api/query/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: finalText }),
+        });
+
+        if (!streamRes.ok || !streamRes.body) {
+          throw new Error("Failed to start streaming");
+        }
+
+        const reader = streamRes.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const evt = JSON.parse(line.slice(6));
+              if (evt.type === "delta") {
+                answer += evt.text;
+                onStreamingAnswer?.(answer);
+                onQueryResult(answer, []);
+              } else if (evt.type === "done") {
+                onQueryResult(answer, []);
+              } else if (evt.type === "error") {
+                throw new Error(evt.message);
+              }
+            } catch { /* ignore parse errors in SSE */ }
+          }
+        }
+      } else if (data.type === "query") {
         setProcessingPhase("searching");
         onQueryResult(data.answer, data.entries || []);
       } else {
@@ -108,6 +158,7 @@ export function UnifiedInput({
     inputMethod,
     onLog,
     onQueryResult,
+    onStreamingAnswer,
     resetTranscript,
   ]);
 
@@ -120,6 +171,7 @@ export function UnifiedInput({
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
+      if (isTouchDevice.current) return;
       e.preventDefault();
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
       holdingRef.current = true;
@@ -130,6 +182,7 @@ export function UnifiedInput({
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
+      if (isTouchDevice.current) return;
       e.preventDefault();
       if (holdingRef.current) {
         holdingRef.current = false;
@@ -141,6 +194,7 @@ export function UnifiedInput({
 
   const handlePointerCancel = useCallback(
     (e: React.PointerEvent) => {
+      if (isTouchDevice.current) return;
       e.preventDefault();
       if (holdingRef.current) {
         holdingRef.current = false;
@@ -149,6 +203,17 @@ export function UnifiedInput({
     },
     [stopListening]
   );
+
+  const handleMicTap = useCallback(() => {
+    if (!isTouchDevice.current) return;
+    if (isListening) {
+      stopListening();
+      setTapRecording(false);
+    } else {
+      startListening();
+      setTapRecording(true);
+    }
+  }, [isListening, startListening, stopListening]);
 
   const activeError = error || speechError;
   const clearActiveError = error
@@ -171,6 +236,10 @@ export function UnifiedInput({
   };
 
   const phase = processingPhase ? phaseConfig[processingPhase] : null;
+
+  const recordingLabel = isTouchDevice.current && tapRecording
+    ? "Recording — tap to stop"
+    : "Recording — release to stop";
 
   return (
     <div className="space-y-2">
@@ -202,7 +271,6 @@ export function UnifiedInput({
           )}
         />
 
-        {/* Status pill - appears between textarea and toolbar when active */}
         {(isListening || isTranscribing || phase) && (
           <div className="px-4 pb-1">
             <span
@@ -219,7 +287,7 @@ export function UnifiedInput({
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
                     <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
                   </span>
-                  Recording — release to stop
+                  {recordingLabel}
                 </>
               )}
               {isTranscribing && (
@@ -240,7 +308,6 @@ export function UnifiedInput({
           </div>
         )}
 
-        {/* Bottom toolbar */}
         <div className="flex items-center justify-between px-3 py-2.5 border-t border-border/40">
           <div className="flex items-center gap-1 text-xs text-muted-foreground/40">
             {hasActiveQuery && !isProcessing ? (
@@ -264,15 +331,15 @@ export function UnifiedInput({
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Mic button */}
             {isSupported ? (
               <button
                 onPointerDown={handlePointerDown}
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerCancel}
+                onClick={handleMicTap}
                 onContextMenu={(e) => e.preventDefault()}
                 disabled={isProcessing || isTranscribing}
-                title="Hold to record"
+                title={isTouchDevice.current ? "Tap to record" : "Hold to record"}
                 className={cn(
                   "relative h-9 w-9 rounded-full flex items-center justify-center",
                   "select-none touch-none transition-all duration-200",
@@ -295,10 +362,8 @@ export function UnifiedInput({
               </button>
             )}
 
-            {/* Divider */}
             <div className="h-5 w-px bg-border/50" />
 
-            {/* Send button */}
             <button
               onClick={handleSubmit}
               disabled={!canSubmit}
@@ -321,7 +386,6 @@ export function UnifiedInput({
         </div>
       </div>
 
-      {/* Error banner */}
       {activeError && (
         <div className="flex items-center gap-2 rounded-xl bg-destructive/10 border border-destructive/20 px-3 py-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
           <AlertCircle className="h-4 w-4 text-destructive shrink-0" />

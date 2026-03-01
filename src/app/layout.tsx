@@ -18,13 +18,24 @@ export const metadata: Metadata = {
     "Log anything by voice or text. AI categorizes, summarizes, and extracts action items from your entries.",
 };
 
+const themeScript = `
+(function(){
+  var t = localStorage.getItem('theme');
+  if (t === 'light') document.documentElement.classList.remove('dark');
+  else document.documentElement.classList.add('dark');
+})();
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
       >
