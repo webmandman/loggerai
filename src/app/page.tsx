@@ -66,6 +66,35 @@ export default function Home() {
     setHighlightedIds([]);
   }, []);
 
+  const handleActionItemToggle = useCallback(
+    (entryId: string, index: number, done: boolean) => {
+      setEntries((prev) =>
+        prev.map((entry) => {
+          if (entry.id !== entryId) return entry;
+          const updated = [...entry.actionItems];
+          updated[index] = { ...updated[index], done };
+          return { ...entry, actionItems: updated };
+        })
+      );
+
+      fetch(`/api/logs/${entryId}/action-items`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ index, done }),
+      }).catch(() => {
+        setEntries((prev) =>
+          prev.map((entry) => {
+            if (entry.id !== entryId) return entry;
+            const reverted = [...entry.actionItems];
+            reverted[index] = { ...reverted[index], done: !done };
+            return { ...entry, actionItems: reverted };
+          })
+        );
+      });
+    },
+    []
+  );
+
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-md">
@@ -103,6 +132,7 @@ export default function Home() {
             entries={entries}
             isLoading={isLoading}
             highlightedIds={highlightedIds}
+            onActionItemToggle={handleActionItemToggle}
           />
         </section>
       </main>

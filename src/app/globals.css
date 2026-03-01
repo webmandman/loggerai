@@ -213,3 +213,18 @@
   animation: recording-ring 1.5s ease-out infinite;
   pointer-events: none;
 }
+
+@keyframes check-bounce {
+  0% { transform: scale(0.5); }
+  50% { transform: scale(1.25); }
+  70% { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+
+@utility animate-check-bounce {
+  animation: check-bounce 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@utility duration-400 {
+  transition-duration: 400ms;
+}

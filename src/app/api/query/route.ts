@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { queryLogs } from "@/lib/ai";
+import { normalizeActionItems } from "@/lib/utils";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -23,6 +24,7 @@ export async function POST(request: NextRequest) {
       category: true,
       tags: true,
       actionItems: true,
+      metadata: true,
       createdAt: true,
     },
   });
@@ -39,7 +41,8 @@ export async function POST(request: NextRequest) {
   const serializedEntries = relevantEntries.map((entry) => ({
     ...entry,
     tags: JSON.parse(entry.tags),
-    actionItems: JSON.parse(entry.actionItems),
+    actionItems: normalizeActionItems(JSON.parse(entry.actionItems)),
+    metadata: JSON.parse(entry.metadata || "{}"),
     createdAt: entry.createdAt.toISOString(),
     updatedAt: entry.updatedAt.toISOString(),
   }));

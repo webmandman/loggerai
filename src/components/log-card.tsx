@@ -6,12 +6,58 @@ import {
   ChevronUp,
   Mic,
   Keyboard,
-  Circle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ActionItemList } from "@/components/action-item-list";
 import type { LogEntry } from "@/types";
+
+const METADATA_SKIP_KEYS = new Set([
+  "physicalNotes", "notes", "sentiment", "description", "details",
+]);
+
+const UNIT_SUFFIXES: Record<string, string> = {
+  Minutes: " min", Hours: " hr", Km: " km", Mi: " mi", Seconds: " sec",
+};
+
+function formatMetaPill(key: string, value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (Array.isArray(value)) return value.length > 0 ? value.join(", ") : null;
+
+  for (const [suffix, unit] of Object.entries(UNIT_SUFFIXES)) {
+    if (key.endsWith(suffix)) return `${value}${unit}`;
+  }
+
+  if (typeof value === "number") {
+    const label = key.replace(/([A-Z])/g, " $1").toLowerCase().trim();
+    return `${value} ${label}`;
+  }
+
+  return String(value);
+}
+
+function MetadataPills({ metadata }: { metadata: Record<string, unknown> }) {
+  const pills = Object.entries(metadata)
+    .filter(([key]) => !METADATA_SKIP_KEYS.has(key))
+    .map(([key, val]) => ({ key, text: formatMetaPill(key, val) }))
+    .filter((p): p is { key: string; text: string } => p.text !== null);
+
+  if (pills.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {pills.slice(0, 5).map(({ key, text }) => (
+        <span
+          key={key}
+          className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+        >
+          {text}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const CATEGORY_COLORS: Record<string, string> = {
   task: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
@@ -42,9 +88,10 @@ const MOOD_EMOJI: Record<string, string> = {
 interface LogCardProps {
   entry: LogEntry;
   highlighted?: boolean;
+  onActionItemToggle?: (entryId: string, index: number, done: boolean) => void;
 }
 
-export function LogCard({ entry, highlighted = false }: LogCardProps) {
+export function LogCard({ entry, highlighted = false, onActionItemToggle }: LogCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const date = new Date(entry.createdAt);
@@ -103,15 +150,16 @@ export function LogCard({ entry, highlighted = false }: LogCardProps) {
           </div>
         )}
 
-        {entry.actionItems.length > 0 && (
-          <div className="space-y-1">
-            {entry.actionItems.map((item, i) => (
-              <div key={i} className="flex items-start gap-1.5 text-sm">
-                <Circle className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
-                <span className="text-muted-foreground">{item}</span>
-              </div>
-            ))}
-          </div>
+        {entry.metadata && Object.keys(entry.metadata).length > 0 && (
+          <MetadataPills metadata={entry.metadata} />
+        )}
+
+        {entry.actionItems.length > 0 && onActionItemToggle && (
+          <ActionItemList
+            items={entry.actionItems}
+            entryId={entry.id}
+            onToggle={onActionItemToggle}
+          />
         )}
 
         <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">

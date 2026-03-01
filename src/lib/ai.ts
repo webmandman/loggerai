@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ProcessedLogEntry, QueryResult } from "@/types";
+import { toLocalDateStr } from "@/lib/utils";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -46,13 +47,20 @@ export async function processLogEntry(
     messages: [
       {
         role: "user",
-        content: `You are an AI assistant that processes personal log entries. Analyze the following log entry and return a JSON object with these fields:
+        content: `You are an AI assistant that processes personal log entries. Today's date is ${toLocalDateStr()}. Analyze the following log entry and return a JSON object with these fields:
 
 - "summary": A concise one-line summary (max 100 chars)
 - "category": One of: task, idea, meeting, personal, note, reminder, bug, question, achievement, other
 - "tags": An array of 1-5 relevant keyword tags (lowercase, no spaces)
 - "actionItems": An array of action items or tasks extracted from the text (empty array if none)
 - "mood": The detected mood/sentiment as a single word (e.g., "positive", "neutral", "frustrated", "excited", "anxious") or null if not discernible
+- "occurredAt": If the entry refers to a specific date or relative time (e.g., "yesterday", "two days ago", "last Monday", "on Feb 15"), resolve it to an ISO 8601 date string (YYYY-MM-DD). If the entry uses "today" or has no date reference, return null.
+- "metadata": A JSON object of structured key-value data extracted from the entry. Extract quantitative and categorical details useful for future queries and aggregation. Examples by category:
+    Exercise/fitness: activityType, durationMinutes, distanceKm, location, intensity, physicalNotes
+    Meeting: attendees, decisions, followups, project
+    Task/work: project, estimatedHours, priority, blockers
+    Food/health: meal, calories, ingredients, symptoms
+  Only include keys that are clearly present or inferable from the text. Use null for mentioned-but-unknown values. Return {} if no structured data can be extracted.
 
 Return ONLY valid JSON, no markdown formatting or code blocks.
 
@@ -74,9 +82,16 @@ ${rawInput}
       category: parsed.category || "note",
       tags: Array.isArray(parsed.tags) ? parsed.tags : [],
       actionItems: Array.isArray(parsed.actionItems)
-        ? parsed.actionItems
+        ? parsed.actionItems.map((item: unknown) =>
+            typeof item === "string" ? { text: item, done: false } : item
+          )
         : [],
       mood: parsed.mood || null,
+      metadata:
+        parsed.metadata && typeof parsed.metadata === "object" && !Array.isArray(parsed.metadata)
+          ? parsed.metadata
+          : {},
+      occurredAt: typeof parsed.occurredAt === "string" ? parsed.occurredAt : null,
     };
   } catch {
     return {
@@ -85,6 +100,8 @@ ${rawInput}
       tags: [],
       actionItems: [],
       mood: null,
+      metadata: {},
+      occurredAt: null,
     };
   }
 }
@@ -98,13 +115,14 @@ export async function queryLogs(
     category: string;
     tags: string;
     actionItems: string;
+    metadata: string;
     createdAt: Date;
   }>
 ): Promise<QueryResult> {
   const entriesContext = entries
     .map(
       (e) =>
-        `[ID: ${e.id}] (${e.createdAt.toISOString().split("T")[0]}) [${e.category}] ${e.summary} — Raw: ${e.rawInput}`
+        `[ID: ${e.id}] (${toLocalDateStr(e.createdAt)}) [${e.category}] ${e.summary} | Metadata: ${e.metadata} | Raw: ${e.rawInput}`
     )
     .join("\n");
 

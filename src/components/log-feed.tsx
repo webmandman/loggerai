@@ -8,12 +8,14 @@ interface LogFeedProps {
   entries: LogEntry[];
   isLoading: boolean;
   highlightedIds?: string[];
+  onActionItemToggle?: (entryId: string, index: number, done: boolean) => void;
 }
 
 export function LogFeed({
   entries,
   isLoading,
   highlightedIds = [],
+  onActionItemToggle,
 }: LogFeedProps) {
   if (isLoading) {
     return (
@@ -56,6 +58,7 @@ export function LogFeed({
           key={entry.id}
           entry={entry}
           highlighted={highlightedIds.includes(entry.id)}
+          onActionItemToggle={onActionItemToggle}
         />
       ))}
     </div>

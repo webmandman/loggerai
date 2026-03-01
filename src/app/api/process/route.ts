@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { classifyIntent, processLogEntry, queryLogs } from "@/lib/ai";
+import { normalizeActionItems, parseLocalDate } from "@/lib/utils";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -37,6 +38,7 @@ export async function POST(request: NextRequest) {
           category: true,
           tags: true,
           actionItems: true,
+          metadata: true,
           createdAt: true,
         },
       });
@@ -53,7 +55,8 @@ export async function POST(request: NextRequest) {
       const serializedEntries = relevantEntries.map((entry) => ({
         ...entry,
         tags: JSON.parse(entry.tags),
-        actionItems: JSON.parse(entry.actionItems),
+        actionItems: normalizeActionItems(JSON.parse(entry.actionItems)),
+        metadata: JSON.parse(entry.metadata || "{}"),
         createdAt: entry.createdAt.toISOString(),
         updatedAt: entry.updatedAt.toISOString(),
       }));
@@ -101,6 +104,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const createdAt = processed.occurredAt ? parseLocalDate(processed.occurredAt) : undefined;
+
   const entry = await prisma.logEntry.create({
     data: {
       rawInput: trimmed,
@@ -108,8 +113,10 @@ export async function POST(request: NextRequest) {
       category: processed.category,
       tags: JSON.stringify(processed.tags),
       actionItems: JSON.stringify(processed.actionItems),
+      metadata: JSON.stringify(processed.metadata),
       mood: processed.mood,
       inputMethod: inputMethod || "text",
+      ...(createdAt ? { createdAt } : {}),
     },
   });
 
@@ -119,7 +126,8 @@ export async function POST(request: NextRequest) {
       entry: {
         ...entry,
         tags: JSON.parse(entry.tags),
-        actionItems: JSON.parse(entry.actionItems),
+        actionItems: normalizeActionItems(JSON.parse(entry.actionItems)),
+        metadata: JSON.parse(entry.metadata || "{}"),
         createdAt: entry.createdAt.toISOString(),
         updatedAt: entry.updatedAt.toISOString(),
       },

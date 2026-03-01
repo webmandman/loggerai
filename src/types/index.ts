@@ -1,9 +1,16 @@
+export interface ActionItem {
+  text: string;
+  done: boolean;
+}
+
 export interface ProcessedLogEntry {
   summary: string;
   category: string;
   tags: string[];
-  actionItems: string[];
+  actionItems: ActionItem[];
   mood: string | null;
+  metadata: Record<string, unknown>;
+  occurredAt: string | null;
 }
 
 export interface LogEntry {
@@ -12,7 +19,8 @@ export interface LogEntry {
   summary: string;
   category: string;
   tags: string[];
-  actionItems: string[];
+  actionItems: ActionItem[];
+  metadata: Record<string, unknown>;
   mood: string | null;
   inputMethod: string;
   createdAt: string;

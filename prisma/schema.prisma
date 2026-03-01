@@ -14,6 +14,7 @@ model LogEntry {
   category    String
   tags        String   // JSON array
   actionItems String   // JSON array
+  metadata    String   @default("{}") // AI-extracted structured data
   mood        String?
   inputMethod String
   createdAt   DateTime @default(now())
