@@ -59,7 +59,7 @@ export function useSpeechRecognition() {
         const now = performance.now();
         if (now - lastUpdate >= 50) {
           lastUpdate = now;
-          setAudioLevel(Math.min(1, smoothedRef.current * 3.5));
+          setAudioLevel(Math.min(1, smoothedRef.current * 8));
         }
 
         animFrameRef.current = requestAnimationFrame(tick);

@@ -103,21 +103,21 @@ export function BottomNav() {
               <span
                 className="volume-ring"
                 style={{
-                  transform: `scale(${1 + audioLevel * 0.6})`,
+                  transform: `scale(${1.15 + audioLevel * 0.55})`,
                   opacity: 0.5 + audioLevel * 0.3,
                 }}
               />
               <span
                 className="volume-ring"
                 style={{
-                  transform: `scale(${1 + audioLevel * 1.0})`,
+                  transform: `scale(${1.25 + audioLevel * 0.85})`,
                   opacity: 0.3 + audioLevel * 0.2,
                 }}
               />
               <span
                 className="volume-ring"
                 style={{
-                  transform: `scale(${1 + audioLevel * 1.5})`,
+                  transform: `scale(${1.35 + audioLevel * 1.25})`,
                   opacity: 0.15 + audioLevel * 0.15,
                 }}
               />
