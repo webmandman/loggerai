@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { LogFeed } from "@/components/log-feed";
 import { FilterBar } from "@/components/filter-bar";
+import { api } from "@/lib/api";
 import type { LogEntry } from "@/types";
 
 const PAGE_SIZE = 20;
@@ -29,7 +30,7 @@ export default function FeedPage() {
       params.set("limit", String(PAGE_SIZE));
       params.set("offset", String(offset));
 
-      const res = await fetch(`/api/logs?${params.toString()}`, {
+      const res = await api(`/api/logs?${params.toString()}`, {
         cache: "no-store",
       });
       if (!res.ok) throw new Error("Failed to fetch");
@@ -90,7 +91,7 @@ export default function FeedPage() {
         })
       );
 
-      fetch(`/api/logs/${entryId}/action-items`, {
+      api(`/api/logs/${entryId}/action-items`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ index, done }),
@@ -113,7 +114,7 @@ export default function FeedPage() {
     setEntries((prev) => prev.filter((e) => e.id !== entryId));
     setTotalCount((prev) => prev - 1);
 
-    fetch(`/api/logs/${entryId}`, { method: "DELETE" }).catch(() => {
+    api(`/api/logs/${entryId}`, { method: "DELETE" }).catch(() => {
       setEntries(previous);
       setTotalCount((prev) => prev + 1);
     });
@@ -124,7 +125,7 @@ export default function FeedPage() {
       prev.map((e) => (e.id === entryId ? { ...e, summary } : e))
     );
 
-    fetch(`/api/logs/${entryId}`, {
+    api(`/api/logs/${entryId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ summary }),

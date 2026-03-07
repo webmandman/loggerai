@@ -130,7 +130,8 @@ export function useSpeechRecognition() {
             new File([audioBlob], `recording.${ext}`, { type: blobType })
           );
 
-          const res = await fetch("/api/transcribe", {
+          const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+          const res = await fetch(`${API_URL}/api/transcribe`, {
             method: "POST",
             body: formData,
           });

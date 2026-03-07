@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ProcessedLogEntry, QueryResult } from "@/types";
-import { toLocalDateStr } from "@/lib/utils";
+import type { ProcessedLogEntry, QueryResult } from "../types/index.js";
+import { toLocalDateStr } from "./utils.js";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,

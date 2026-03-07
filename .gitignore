@@ -41,6 +41,9 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+/backend/generated/prisma
+/backend/node_modules
+/backend/dist
 
 # database
 *.db

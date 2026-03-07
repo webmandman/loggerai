@@ -3,7 +3,6 @@
 import { useState, useCallback } from "react";
 import {
   CheckCircle2,
-  Circle,
   Hash,
   Smile,
   Frown,
@@ -15,7 +14,9 @@ import {
   Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
+import { ActionItemList } from "@/components/action-item-list";
 import type { LogEntry } from "@/types";
 
 interface LogResultProps {
@@ -41,21 +42,32 @@ function getMoodConfig(mood: string | null) {
 }
 
 export function LogResult({ entry }: LogResultProps) {
-  const [checkedItems, setCheckedItems] = useState<Set<number>>(new Set());
+  const [actionItems, setActionItems] = useState(entry.actionItems);
   const moodCfg = getMoodConfig(entry.mood);
   const MoodIcon = moodCfg?.icon;
-  const hasActionItems = entry.actionItems.length > 0;
+  const hasActionItems = actionItems.length > 0;
   const hasTags = entry.tags.length > 0;
   const hasExtras = hasActionItems || hasTags || entry.mood;
 
-  const toggleAction = useCallback((idx: number) => {
-    setCheckedItems((prev) => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
-      return next;
-    });
-  }, []);
+  const handleToggle = useCallback(
+    async (entryId: string, index: number, done: boolean) => {
+      setActionItems((prev) =>
+        prev.map((item, i) => (i === index ? { ...item, done } : item))
+      );
+      try {
+        await api(`/api/logs/${entryId}/action-items`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ index, done }),
+        });
+      } catch {
+        setActionItems((prev) =>
+          prev.map((item, i) => (i === index ? { ...item, done: !done } : item))
+        );
+      }
+    },
+    []
+  );
 
   return (
     <div className="overflow-hidden rounded-2xl border border-green-500/15 bg-gradient-to-br from-card via-card to-green-500/[0.02] shadow-sm animate-in fade-in slide-in-from-bottom-3 duration-500">
@@ -99,38 +111,11 @@ export function LogResult({ entry }: LogResultProps) {
               <span className="text-[11px] font-semibold text-foreground/50 uppercase tracking-wider">
                 Action items
               </span>
-              {entry.actionItems.map((item, i) => {
-                const done = checkedItems.has(i);
-                return (
-                  <button
-                    key={i}
-                    onClick={() => toggleAction(i)}
-                    className={cn(
-                      "group flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left transition-all duration-200",
-                      "hover:bg-green-500/[0.04]",
-                      done && "opacity-60"
-                    )}
-                  >
-                    <div className="mt-0.5 shrink-0">
-                      {done ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-500 animate-in zoom-in-50 duration-200" />
-                      ) : (
-                        <Circle className="h-4 w-4 text-muted-foreground/40 group-hover:text-green-500/60 transition-colors" />
-                      )}
-                    </div>
-                    <span
-                      className={cn(
-                        "text-sm leading-relaxed transition-all duration-200",
-                        done
-                          ? "line-through text-muted-foreground/50"
-                          : "text-foreground/85"
-                      )}
-                    >
-                      {item.text}
-                    </span>
-                  </button>
-                );
-              })}
+              <ActionItemList
+                items={actionItems}
+                entryId={entry.id}
+                onToggle={handleToggle}
+              />
             </div>
           )}
 

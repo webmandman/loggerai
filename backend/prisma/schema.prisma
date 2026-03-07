@@ -1,0 +1,22 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model LogEntry {
+  id          String   @id @default(cuid())
+  rawInput    String
+  summary     String
+  category    String
+  tags        String   // JSON array
+  actionItems String   // JSON array
+  metadata    String   @default("{}") // AI-extracted structured data
+  mood        String?
+  inputMethod String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Lightbulb, X } from "lucide-react";
+import { api } from "@/lib/api";
 
 const CACHE_KEY = "logger_insights";
 
@@ -37,7 +38,7 @@ export function InsightsCard() {
 
     (async () => {
       try {
-        const countRes = await fetch("/api/logs?limit=0&offset=0");
+        const countRes = await api("/api/logs?limit=0&offset=0");
         const { total } = await countRes.json();
 
         const cached = readCache();
@@ -46,7 +47,7 @@ export function InsightsCard() {
           return;
         }
 
-        const res = await fetch("/api/insights");
+        const res = await api("/api/insights");
         const data = await res.json();
         if (data.insights && data.insights.length > 0) {
           setInsights(data.insights);

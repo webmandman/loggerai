@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { ChevronDown, ChevronUp, CalendarDays, Loader2 } from "lucide-react";
+import { api } from "@/lib/api";
 
 const CACHE_KEY = "logger_digest";
 
@@ -50,7 +51,7 @@ export function WeeklyDigest() {
     (async () => {
       setLoading(true);
       try {
-        const countRes = await fetch("/api/logs?limit=0&offset=0", { cache: "no-store" });
+        const countRes = await api("/api/logs?limit=0&offset=0", { cache: "no-store" });
         const { total } = await countRes.json();
 
         const cached = readCache();
@@ -60,7 +61,7 @@ export function WeeklyDigest() {
           return;
         }
 
-        const res = await fetch("/api/digest");
+        const res = await api("/api/digest");
         const d = await res.json();
         setData(d);
         writeCache(d, total);

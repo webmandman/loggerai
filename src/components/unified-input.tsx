@@ -13,6 +13,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import { useSpeech } from "@/lib/speech-context";
 import type { LogEntry, InputMethod } from "@/types";
 
@@ -78,7 +79,7 @@ export function UnifiedInput({
     setProcessingPhase("classifying");
 
     try {
-      const res = await fetch("/api/process", {
+      const res = await api("/api/process", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rawInput: finalText, inputMethod }),
@@ -94,7 +95,7 @@ export function UnifiedInput({
         setProcessingPhase("searching");
         let answer = "";
 
-        const streamRes = await fetch("/api/query/stream", {
+        const streamRes = await api("/api/query/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ question: finalText }),
