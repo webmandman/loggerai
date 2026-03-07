@@ -48,7 +48,10 @@ export async function GET(request: NextRequest) {
     updatedAt: entry.updatedAt.toISOString(),
   }));
 
-  return NextResponse.json({ entries: serialized, total });
+  return NextResponse.json(
+    { entries: serialized, total },
+    { headers: { "Cache-Control": "no-store, max-age=0" } }
+  );
 }
 
 export async function POST(request: NextRequest) {

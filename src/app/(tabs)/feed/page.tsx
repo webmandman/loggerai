@@ -29,7 +29,9 @@ export default function FeedPage() {
       params.set("limit", String(PAGE_SIZE));
       params.set("offset", String(offset));
 
-      const res = await fetch(`/api/logs?${params.toString()}`);
+      const res = await fetch(`/api/logs?${params.toString()}`, {
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
 
@@ -49,6 +51,19 @@ export default function FeedPage() {
 
   useEffect(() => {
     fetchEntries(selectedCategory, dateRange.from, dateRange.to);
+  }, [fetchEntries, selectedCategory, dateRange]);
+
+  useEffect(() => {
+    const refetch = () => fetchEntries(selectedCategory, dateRange.from, dateRange.to);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") refetch();
+    };
+    window.addEventListener("focus", refetch);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("focus", refetch);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [fetchEntries, selectedCategory, dateRange]);
 
   const handleLoadMore = useCallback(() => {

@@ -50,7 +50,7 @@ export function WeeklyDigest() {
     (async () => {
       setLoading(true);
       try {
-        const countRes = await fetch("/api/logs?limit=0&offset=0");
+        const countRes = await fetch("/api/logs?limit=0&offset=0", { cache: "no-store" });
         const { total } = await countRes.json();
 
         const cached = readCache();
