@@ -214,6 +214,16 @@
   pointer-events: none;
 }
 
+.volume-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid oklch(0.637 0.237 25.331 / 0.45);
+  pointer-events: none;
+  transition: transform 100ms ease-out, opacity 100ms ease-out;
+  will-change: transform, opacity;
+}
+
 @keyframes check-bounce {
   0% { transform: scale(0.5); }
   50% { transform: scale(1.25); }

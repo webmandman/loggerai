@@ -7,12 +7,69 @@ export function useSpeechRecognition() {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [audioLevel, setAudioLevel] = useState(0);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const mimeRef = useRef({ mimeType: "audio/webm", ext: "webm" });
   const recordStartRef = useRef(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const animFrameRef = useRef<number>(0);
+  const smoothedRef = useRef(0);
+
+  const stopAudioAnalysis = useCallback(() => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = 0;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    smoothedRef.current = 0;
+    setAudioLevel(0);
+  }, []);
+
+  const startAudioAnalysis = useCallback((stream: MediaStream) => {
+    try {
+      const ctx = new AudioContext();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      audioContextRef.current = ctx;
+
+      const dataArray = new Uint8Array(analyser.fftSize);
+      let lastUpdate = 0;
+
+      const tick = () => {
+        analyser.getByteTimeDomainData(dataArray);
+
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const v = (dataArray[i] - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / dataArray.length);
+
+        const attack = rms > smoothedRef.current ? 0.4 : 0.15;
+        smoothedRef.current += (rms - smoothedRef.current) * attack;
+
+        const now = performance.now();
+        if (now - lastUpdate >= 50) {
+          lastUpdate = now;
+          setAudioLevel(Math.min(1, smoothedRef.current * 3.5));
+        }
+
+        animFrameRef.current = requestAnimationFrame(tick);
+      };
+
+      animFrameRef.current = requestAnimationFrame(tick);
+    } catch {
+      // Web Audio API unavailable — degrade silently
+    }
+  }, []);
 
   const startListening = useCallback(async () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
@@ -24,6 +81,7 @@ export function useSpeechRecognition() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+      startAudioAnalysis(stream);
 
       const candidates = [
         { mimeType: "audio/webm;codecs=opus", ext: "webm" },
@@ -49,6 +107,7 @@ export function useSpeechRecognition() {
       };
 
       mediaRecorder.onstop = async () => {
+        stopAudioAnalysis();
         stream.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
 
@@ -111,9 +170,10 @@ export function useSpeechRecognition() {
             : "Could not access microphone. Please check your browser settings.";
       setError(msg);
     }
-  }, []);
+  }, [startAudioAnalysis]);
 
   const stopListening = useCallback(() => {
+    stopAudioAnalysis();
     if (
       mediaRecorderRef.current &&
       mediaRecorderRef.current.state !== "inactive"
@@ -126,7 +186,7 @@ export function useSpeechRecognition() {
       streamRef.current = null;
     }
     setIsListening(false);
-  }, []);
+  }, [stopAudioAnalysis]);
 
   const resetTranscript = useCallback(() => {
     setTranscript("");
@@ -142,6 +202,7 @@ export function useSpeechRecognition() {
     transcript,
     isSupported: true,
     error,
+    audioLevel,
     startListening,
     stopListening,
     resetTranscript,

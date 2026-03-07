@@ -10,7 +10,7 @@ import { useSpeech } from "@/lib/speech-context";
 export function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const { isListening, startListening, stopListening } = useSpeech();
+  const { isListening, audioLevel, startListening, stopListening } = useSpeech();
   const holdingRef = useRef(false);
   const isTouchDevice = useRef(false);
 
@@ -97,8 +97,32 @@ export function BottomNav() {
           )}
           aria-label="Hold to record"
         >
-          <Mic className={cn("h-6 w-6", isListening && "scale-110")} />
-          {isListening && <span className="recording-ripple" />}
+          <Mic className={cn("h-6 w-6 relative z-10", isListening && "scale-110")} />
+          {isListening && (
+            <>
+              <span
+                className="volume-ring"
+                style={{
+                  transform: `scale(${1 + audioLevel * 0.6})`,
+                  opacity: 0.5 + audioLevel * 0.3,
+                }}
+              />
+              <span
+                className="volume-ring"
+                style={{
+                  transform: `scale(${1 + audioLevel * 1.0})`,
+                  opacity: 0.3 + audioLevel * 0.2,
+                }}
+              />
+              <span
+                className="volume-ring"
+                style={{
+                  transform: `scale(${1 + audioLevel * 1.5})`,
+                  opacity: 0.15 + audioLevel * 0.15,
+                }}
+              />
+            </>
+          )}
         </button>
 
         <Link
