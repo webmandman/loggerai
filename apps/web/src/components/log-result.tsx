@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { ActionItemList } from "@/components/action-item-list";
-import type { LogEntry } from "@/types";
+import type { LogEntry } from "@logger-ai/shared";
 
 interface LogResultProps {
   entry: LogEntry;

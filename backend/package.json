@@ -1,5 +1,5 @@
 {
-  "name": "logger-ai-backend",
+  "name": "@logger-ai/backend",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,6 +9,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@logger-ai/shared": "*",
     "@anthropic-ai/sdk": "^0.78.0",
     "@hono/node-server": "^1.14.3",
     "@prisma/adapter-better-sqlite3": "^7.4.2",

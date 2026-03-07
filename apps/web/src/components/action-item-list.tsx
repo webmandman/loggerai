@@ -1,7 +1,7 @@
 "use client";
 
 import { Circle, CheckCircle2 } from "lucide-react";
-import type { ActionItem } from "@/types";
+import type { ActionItem } from "@logger-ai/shared";
 
 interface ActionItemListProps {
   items: ActionItem[];

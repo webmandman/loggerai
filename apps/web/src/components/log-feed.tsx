@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import { LogCard } from "@/components/log-card";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { LogEntry } from "@/types";
+import type { LogEntry } from "@logger-ai/shared";
 
 interface LogFeedProps {
   entries: LogEntry[];

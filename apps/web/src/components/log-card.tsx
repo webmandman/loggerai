@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ActionItemList } from "@/components/action-item-list";
-import type { LogEntry } from "@/types";
+import type { LogEntry } from "@logger-ai/shared";
 
 const METADATA_SKIP_KEYS = new Set([
   "physicalNotes", "notes", "sentiment", "description", "details",

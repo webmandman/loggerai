@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import type { ActionItem } from "@/types"
+import type { ActionItem } from "@logger-ai/shared"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))

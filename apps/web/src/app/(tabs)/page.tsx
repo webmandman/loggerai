@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { UnifiedInput } from "@/components/unified-input";
 import { QueryResults } from "@/components/query-results";
 import { LogResult } from "@/components/log-result";
-import type { LogEntry } from "@/types";
+import type { LogEntry } from "@logger-ai/shared";
 
 export default function HomePage() {
   const [queryAnswer, setQueryAnswer] = useState<string | null>(null);

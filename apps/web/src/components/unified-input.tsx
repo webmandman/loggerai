@@ -15,7 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useSpeech } from "@/lib/speech-context";
-import type { LogEntry, InputMethod } from "@/types";
+import type { LogEntry, InputMethod } from "@logger-ai/shared";
 
 interface UnifiedInputProps {
   onLog: (entry: LogEntry) => void;

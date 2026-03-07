@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { LogFeed } from "@/components/log-feed";
 import { FilterBar } from "@/components/filter-bar";
 import { api } from "@/lib/api";
-import type { LogEntry } from "@/types";
+import type { LogEntry } from "@logger-ai/shared";
 
 const PAGE_SIZE = 20;
 

@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ProcessedLogEntry, QueryResult } from "../types/index.js";
+import type { ProcessedLogEntry, QueryResult } from "@logger-ai/shared";
 import { toLocalDateStr } from "./utils.js";
 
 const anthropic = new Anthropic({

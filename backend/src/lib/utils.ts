@@ -1,4 +1,4 @@
-import type { ActionItem } from "../types/index.js";
+import type { ActionItem } from "@logger-ai/shared";
 
 export function toLocalDateStr(date: Date = new Date()): string {
   const y = date.getFullYear();

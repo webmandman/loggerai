@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CATEGORIES } from "@/types";
+import { CATEGORIES } from "@logger-ai/shared";
 
 interface FilterBarProps {
   selectedCategory: string | null;
