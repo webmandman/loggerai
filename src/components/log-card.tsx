@@ -129,9 +129,9 @@ export function LogCard({ entry, onActionItemToggle, onDelete, onEditSummary, cl
 
   return (
     <Card
-      className={`transition-all hover:shadow-md ${className || ""}`}
+      className={`transition-all hover:shadow-md !py-0 !gap-0 ${className || ""}`}
     >
-      <CardHeader className="pb-2 pt-4 px-4">
+      <CardHeader className="!p-3 !pb-1 !gap-0">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0 group/summary">
             {isEditing ? (
@@ -154,7 +154,7 @@ export function LogCard({ entry, onActionItemToggle, onDelete, onEditSummary, cl
                 </button>
               </div>
             ) : (
-              <p className="text-sm font-medium leading-snug">
+              <p className="text-base font-medium leading-snug">
                 {entry.summary}
                 {onEditSummary && (
                   <button
@@ -168,39 +168,15 @@ export function LogCard({ entry, onActionItemToggle, onDelete, onEditSummary, cl
             )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            {entry.mood && MOOD_EMOJI[entry.mood] && (
+            {entry.mood && MOOD_EMOJI[entry.mood] && entry.actionItems.length === 0 && (
               <span title={entry.mood} className="text-base">
                 {MOOD_EMOJI[entry.mood]}
               </span>
             )}
-            <Badge
-              variant="secondary"
-              className={`text-xs ${CATEGORY_COLORS[entry.category] || CATEGORY_COLORS.other}`}
-            >
-              {entry.category}
-            </Badge>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="pt-0 px-4 pb-3 space-y-2">
-        {entry.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {entry.tags.map((tag) => (
-              <Badge
-                key={tag}
-                variant="outline"
-                className="text-xs font-normal"
-              >
-                #{tag}
-              </Badge>
-            ))}
-          </div>
-        )}
-
-        {entry.metadata && Object.keys(entry.metadata).length > 0 && (
-          <MetadataPills metadata={entry.metadata} />
-        )}
-
+      <CardContent className="!px-3 !pt-0 pb-2 space-y-1.5">
         {entry.actionItems.length > 0 && onActionItemToggle && (
           <ActionItemList
             items={entry.actionItems}
@@ -209,7 +185,7 @@ export function LogCard({ entry, onActionItemToggle, onDelete, onEditSummary, cl
           />
         )}
 
-        <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
             {entry.user && (
               <span className="flex items-center gap-1">
@@ -217,18 +193,12 @@ export function LogCard({ entry, onActionItemToggle, onDelete, onEditSummary, cl
                   <img
                     src={entry.user.image}
                     alt=""
-                    className="h-3.5 w-3.5 rounded-full"
+                    className="h-5 w-5 rounded-full"
                     referrerPolicy="no-referrer"
                   />
                 )}
                 <span>{entry.user.name?.split(" ")[0]}</span>
               </span>
-            )}
-            <span>{dateStr} at {timeStr}</span>
-            {entry.inputMethod === "voice" ? (
-              <Mic className="h-3 w-3" />
-            ) : (
-              <Keyboard className="h-3 w-3" />
             )}
           </div>
           <Button
@@ -253,6 +223,41 @@ export function LogCard({ entry, onActionItemToggle, onDelete, onEditSummary, cl
 
         {expanded && (
           <div className="pt-2 border-t space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge
+                variant="secondary"
+                className={`text-xs ${CATEGORY_COLORS[entry.category] || CATEGORY_COLORS.other}`}
+              >
+                {entry.category}
+              </Badge>
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                {dateStr} at {timeStr}
+                {entry.inputMethod === "voice" ? (
+                  <Mic className="h-3 w-3" />
+                ) : (
+                  <Keyboard className="h-3 w-3" />
+                )}
+              </span>
+            </div>
+
+            {entry.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {entry.tags.map((tag) => (
+                  <Badge
+                    key={tag}
+                    variant="outline"
+                    className="text-xs font-normal"
+                  >
+                    #{tag}
+                  </Badge>
+                ))}
+              </div>
+            )}
+
+            {entry.metadata && Object.keys(entry.metadata).length > 0 && (
+              <MetadataPills metadata={entry.metadata} />
+            )}
+
             <p className="text-sm text-muted-foreground whitespace-pre-wrap">
               {entry.rawInput}
             </p>

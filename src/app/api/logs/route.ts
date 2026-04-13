@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const category = searchParams.get("category");
   const tag = searchParams.get("tag");
+  const userId = searchParams.get("userId");
   const from = searchParams.get("from");
   const to = searchParams.get("to");
   const limit = parseInt(searchParams.get("limit") || "50", 10);
@@ -24,6 +25,10 @@ export async function GET(request: NextRequest) {
 
   if (tag) {
     where.tags = { contains: tag };
+  }
+
+  if (userId) {
+    where.userId = userId;
   }
 
   if (from || to) {

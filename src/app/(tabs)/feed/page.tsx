@@ -15,10 +15,11 @@ export default function FeedPage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
+  const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [newEntryIds, setNewEntryIds] = useState<string[]>([]);
   const newEntryTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const fetchEntries = useCallback(async (category?: string | null, from?: string | null, to?: string | null, offset = 0) => {
+  const fetchEntries = useCallback(async (category?: string | null, from?: string | null, to?: string | null, userId?: string | null, offset = 0) => {
     if (offset === 0) setIsLoading(true);
     else setIsLoadingMore(true);
 
@@ -27,6 +28,7 @@ export default function FeedPage() {
       if (category) params.set("category", category);
       if (from) params.set("from", from);
       if (to) params.set("to", to);
+      if (userId) params.set("userId", userId);
       params.set("limit", String(PAGE_SIZE));
       params.set("offset", String(offset));
 
@@ -51,11 +53,11 @@ export default function FeedPage() {
   }, []);
 
   useEffect(() => {
-    fetchEntries(selectedCategory, dateRange.from, dateRange.to);
-  }, [fetchEntries, selectedCategory, dateRange]);
+    fetchEntries(selectedCategory, dateRange.from, dateRange.to, selectedUser);
+  }, [fetchEntries, selectedCategory, dateRange, selectedUser]);
 
   useEffect(() => {
-    const refetch = () => fetchEntries(selectedCategory, dateRange.from, dateRange.to);
+    const refetch = () => fetchEntries(selectedCategory, dateRange.from, dateRange.to, selectedUser);
     const handleVisibility = () => {
       if (document.visibilityState === "visible") refetch();
     };
@@ -65,12 +67,12 @@ export default function FeedPage() {
       window.removeEventListener("focus", refetch);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [fetchEntries, selectedCategory, dateRange]);
+  }, [fetchEntries, selectedCategory, dateRange, selectedUser]);
 
   const handleLoadMore = useCallback(() => {
     if (isLoadingMore) return;
-    fetchEntries(selectedCategory, dateRange.from, dateRange.to, entries.length);
-  }, [fetchEntries, selectedCategory, dateRange, entries.length, isLoadingMore]);
+    fetchEntries(selectedCategory, dateRange.from, dateRange.to, selectedUser, entries.length);
+  }, [fetchEntries, selectedCategory, dateRange, selectedUser, entries.length, isLoadingMore]);
 
   const handleCategoryChange = useCallback((category: string | null) => {
     setSelectedCategory(category);
@@ -78,6 +80,10 @@ export default function FeedPage() {
 
   const handleDateRangeChange = useCallback((from: string | null, to: string | null) => {
     setDateRange({ from, to });
+  }, []);
+
+  const handleUserChange = useCallback((userId: string | null) => {
+    setSelectedUser(userId);
   }, []);
 
   const handleActionItemToggle = useCallback(
@@ -130,9 +136,9 @@ export default function FeedPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ summary }),
     }).catch(() => {
-      fetchEntries(selectedCategory, dateRange.from, dateRange.to);
+      fetchEntries(selectedCategory, dateRange.from, dateRange.to, selectedUser);
     });
-  }, [fetchEntries, selectedCategory, dateRange]);
+  }, [fetchEntries, selectedCategory, dateRange, selectedUser]);
 
   const hasMore = entries.length < totalCount;
 
@@ -145,6 +151,8 @@ export default function FeedPage() {
         dateFrom={dateRange.from}
         dateTo={dateRange.to}
         onDateRangeChange={handleDateRangeChange}
+        selectedUser={selectedUser}
+        onUserChange={handleUserChange}
       />
       <LogFeed
         entries={entries}
