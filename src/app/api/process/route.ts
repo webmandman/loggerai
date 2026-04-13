@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireAuth } from "@/lib/auth-guard";
 import { classifyIntent, processLogEntry } from "@/lib/ai";
 import { normalizeActionItems, parseLocalDate } from "@/lib/utils";
 
 export async function POST(request: NextRequest) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   const body = await request.json();
   const { rawInput, inputMethod } = body;
 
@@ -78,6 +82,7 @@ export async function POST(request: NextRequest) {
       metadata: JSON.stringify(processed.metadata),
       mood: processed.mood,
       inputMethod: inputMethod || "text",
+      userId: session!.user!.id,
       ...(createdAt ? { createdAt } : {}),
     },
   });

@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireAuth } from "@/lib/auth-guard";
 import { processLogEntry } from "@/lib/ai";
 import { normalizeActionItems, parseLocalDate } from "@/lib/utils";
 
 export async function GET(request: NextRequest) {
+  const { error } = await requireAuth();
+  if (error) return error;
+
   const searchParams = request.nextUrl.searchParams;
   const category = searchParams.get("category");
   const tag = searchParams.get("tag");
@@ -35,6 +39,7 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: "desc" },
       take: limit,
       skip: offset,
+      include: { user: { select: { id: true, name: true, image: true } } },
     }),
     prisma.logEntry.count({ where }),
   ]);
@@ -46,6 +51,7 @@ export async function GET(request: NextRequest) {
     metadata: JSON.parse(entry.metadata || "{}"),
     createdAt: entry.createdAt.toISOString(),
     updatedAt: entry.updatedAt.toISOString(),
+    user: entry.user ?? null,
   }));
 
   return NextResponse.json(
@@ -55,6 +61,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const { session, error: authError } = await requireAuth();
+  if (authError) return authError;
+
   const body = await request.json();
   const { rawInput, inputMethod } = body;
 
@@ -102,6 +111,7 @@ export async function POST(request: NextRequest) {
       metadata: JSON.stringify(processed.metadata),
       mood: processed.mood,
       inputMethod: inputMethod || "text",
+      userId: session!.user!.id,
       ...(createdAt ? { createdAt } : {}),
     },
   });

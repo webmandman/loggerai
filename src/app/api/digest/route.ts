@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireAuth } from "@/lib/auth-guard";
 import { normalizeActionItems } from "@/lib/utils";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -16,6 +17,9 @@ function getWeekBounds(): { start: Date; end: Date } {
 }
 
 export async function GET() {
+  const { error } = await requireAuth();
+  if (error) return error;
+
   try {
     const { start, end } = getWeekBounds();
 

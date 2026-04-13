@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireAuth } from "@/lib/auth-guard";
 import { normalizeActionItems } from "@/lib/utils";
 
 export async function POST(request: NextRequest) {
+  const { error } = await requireAuth();
+  if (error) return error;
+
   const { ids } = await request.json();
 
   if (!Array.isArray(ids) || ids.length === 0) {

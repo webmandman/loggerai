@@ -25,6 +25,11 @@ export interface LogEntry {
   inputMethod: string;
   createdAt: string;
   updatedAt: string;
+  user?: {
+    id: string;
+    name: string | null;
+    image: string | null;
+  } | null;
 }
 
 export interface QueryResult {

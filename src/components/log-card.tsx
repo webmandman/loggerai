@@ -211,6 +211,19 @@ export function LogCard({ entry, onActionItemToggle, onDelete, onEditSummary, cl
 
         <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
           <div className="flex items-center gap-2">
+            {entry.user && (
+              <span className="flex items-center gap-1">
+                {entry.user.image && (
+                  <img
+                    src={entry.user.image}
+                    alt=""
+                    className="h-3.5 w-3.5 rounded-full"
+                    referrerPolicy="no-referrer"
+                  />
+                )}
+                <span>{entry.user.name?.split(" ")[0]}</span>
+              </span>
+            )}
             <span>{dateStr} at {timeStr}</span>
             {entry.inputMethod === "voice" ? (
               <Mic className="h-3 w-3" />
