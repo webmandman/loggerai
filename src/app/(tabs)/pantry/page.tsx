@@ -15,6 +15,13 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { downscaleImage } from "@/lib/image";
+import {
+  SWIPE_MAX,
+  SWIPE_THRESHOLD,
+  shouldDelete,
+  swipeIntent,
+  swipeOffset,
+} from "@/lib/swipe";
 import { cn } from "@/lib/utils";
 import type { PantryItem } from "@/types";
 
@@ -31,6 +38,7 @@ export default function PantryPage() {
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const [undo, setUndo] = useState<PantryItem | null>(null);
   const [newItem, setNewItem] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -126,14 +134,46 @@ export default function PantryPage() {
   const remove = useCallback(
     async (item: PantryItem) => {
       setItems((prev) => prev.filter((i) => i.id !== item.id));
+      setFlash(null);
+      setError(null);
+      // A swipe is easy to trigger by accident, so deletion needs a way back.
+      setUndo(item);
+
       const res = await api(`/api/pantry/${item.id}`, { method: "DELETE" });
       if (!res.ok) {
+        setUndo(null);
         setError("Could not remove that item");
         load();
       }
     },
     [load]
   );
+
+  const undoRemove = useCallback(async () => {
+    if (!undo) return;
+    const item = undo;
+    setUndo(null);
+
+    // Re-create rather than soft-delete: the row is sent back whole, so it
+    // survives navigating away before undoing.
+    const res = await api("/api/pantry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: item.name,
+        label: item.label,
+        status: item.status,
+        quantity: item.quantity,
+        aliases: item.aliases,
+      }),
+    });
+
+    if (!res.ok) {
+      setError(`Could not restore ${item.label}`);
+      return;
+    }
+    load();
+  }, [undo, load]);
 
   const addManual = useCallback(async () => {
     const label = newItem.trim();
@@ -251,6 +291,33 @@ export default function PantryPage() {
       </div>
 
       <div className="pt-3 space-y-2">
+        {undo && (
+          <div
+            className={cn(
+              "flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5",
+              "animate-in fade-in slide-in-from-top-1 duration-200"
+            )}
+          >
+            <Trash2 className="h-4 w-4 text-muted-foreground shrink-0" />
+            <p className="text-sm flex-1 min-w-0 truncate">
+              Removed <span className="font-medium">{undo.label}</span>
+            </p>
+            <button
+              onClick={undoRemove}
+              className="shrink-0 rounded-lg px-2.5 py-1 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
+            >
+              Undo
+            </button>
+            <button
+              onClick={() => setUndo(null)}
+              aria-label="Dismiss"
+              className="shrink-0 rounded-full p-0.5 opacity-50 hover:opacity-100 transition-opacity"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         {flash && (
           <Banner tone="ok" onDismiss={() => setFlash(null)}>
             {flash}
@@ -370,9 +437,94 @@ function Row({
   onRemove: () => void;
 }) {
   const buying = tab === "needed";
+  const [dx, setDx] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const gesture = useRef<{
+    x: number;
+    y: number;
+    live: boolean;
+    horizontal: boolean;
+  } | null>(null);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    // Desktop keeps the hover trash button; swiping with a mouse fights
+    // text selection and drag-to-scroll for no benefit.
+    if (e.pointerType === "mouse") return;
+    gesture.current = { x: e.clientX, y: e.clientY, live: true, horizontal: false };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const g = gesture.current;
+    if (!g?.live) return;
+
+    const deltaX = e.clientX - g.x;
+    const deltaY = e.clientY - g.y;
+
+    if (!g.horizontal) {
+      const intent = swipeIntent(deltaX, deltaY);
+      if (intent === "pending") return;
+      if (intent === "scroll") {
+        g.live = false; // let the page scroll; stay out of the way
+        return;
+      }
+      g.horizontal = true;
+      setDragging(true);
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+
+    setDx(swipeOffset(deltaX));
+  };
+
+  const handlePointerEnd = () => {
+    const g = gesture.current;
+    gesture.current = null;
+    setDragging(false);
+
+    if (!g?.horizontal) {
+      setDx(0);
+      return;
+    }
+
+    if (shouldDelete(dx)) {
+      setDx(-SWIPE_MAX * 3); // slide it off before the parent unmounts it
+      onRemove();
+    } else {
+      setDx(0);
+    }
+  };
 
   return (
-    <li className="group flex items-center gap-3 rounded-xl px-1 py-1 hover:bg-accent/40 transition-colors">
+    <li
+      className="relative overflow-hidden rounded-xl"
+      style={{ touchAction: "pan-y" }}
+    >
+      <div
+        aria-hidden
+        className={cn(
+          "absolute inset-0 flex items-center justify-end pr-5 rounded-xl",
+          "bg-destructive text-white transition-opacity",
+          dx < 0 ? "opacity-100" : "opacity-0"
+        )}
+      >
+        <Trash2
+          className={cn(
+            "h-5 w-5 transition-transform",
+            dx <= -SWIPE_THRESHOLD ? "scale-110" : "scale-90"
+          )}
+        />
+      </div>
+
+      <div
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+        onPointerCancel={handlePointerEnd}
+        style={{
+          transform: `translateX(${dx}px)`,
+          transition: dragging ? "none" : "transform 180ms ease-out",
+        }}
+        className="group relative flex items-center gap-3 rounded-xl bg-background px-1 py-1 hover:bg-accent/40"
+      >
       <button
         onClick={onToggle}
         aria-label={
@@ -410,12 +562,17 @@ function Row({
         title="Remove"
         className={cn(
           "h-9 w-9 shrink-0 rounded-lg flex items-center justify-center",
-          "text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10",
-          "opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all"
+          "text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10",
+          // Visible by default: touch devices have no hover, so the old
+          // hover-only reveal meant no way to delete at all on a phone.
+          // Desktop keeps the quieter reveal-on-hover behaviour.
+          "opacity-100 transition-all",
+          "sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
         )}
       >
-        <Trash2 className="h-3.5 w-3.5" />
+        <Trash2 className="h-4 w-4" />
       </button>
+      </div>
     </li>
   );
 }

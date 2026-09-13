@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --test src/lib/*.test.ts",
     "test:pantry": "node --test src/lib/pantry.test.ts",
+    "test:swipe": "node --test src/lib/swipe.test.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

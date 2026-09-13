@@ -50,13 +50,24 @@ export async function POST(request: NextRequest) {
   const { error } = await requireAuth();
   if (error) return error;
 
-  const { label, status } = await request.json();
+  const { label, status, quantity, aliases, name } = await request.json();
 
   if (!label || typeof label !== "string" || !label.trim()) {
     return NextResponse.json({ error: "label is required" }, { status: 400 });
   }
 
-  const input = [{ name: label.trim(), label: label.trim() }];
+  // `name`, `quantity` and `aliases` are optional: a plain manual add sends only
+  // a label, while an undo after a delete sends the row back whole.
+  const input = [
+    {
+      name: typeof name === "string" && name.trim() ? name.trim() : label.trim(),
+      label: label.trim(),
+      quantity: typeof quantity === "string" ? quantity : null,
+      aliases: Array.isArray(aliases)
+        ? aliases.filter((a: unknown): a is string => typeof a === "string")
+        : [],
+    },
+  ];
   const [item] =
     status === "available"
       ? await markAvailable(input, "manual")
