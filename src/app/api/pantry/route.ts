@@ -7,14 +7,24 @@ function serialize(item: {
   id: string;
   name: string;
   label: string;
+  aliases: string;
   quantity: string | null;
   status: string;
   source: string;
   createdAt: Date;
   updatedAt: Date;
 }) {
+  let aliases: string[] = [];
+  try {
+    const parsed = JSON.parse(item.aliases);
+    if (Array.isArray(parsed)) aliases = parsed;
+  } catch {
+    /* a malformed alias list must not take the whole pantry down */
+  }
+
   return {
     ...item,
+    aliases,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
   };

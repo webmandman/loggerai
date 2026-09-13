@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Camera,
   Check,
+  Circle,
   Loader2,
   Plus,
+  Search,
   ShoppingCart,
   Trash2,
   X,
@@ -16,9 +18,15 @@ import { downscaleImage } from "@/lib/image";
 import { cn } from "@/lib/utils";
 import type { PantryItem } from "@/types";
 
+type Tab = "needed" | "available";
+
+/** Above this many rows, scrolling stops being a reasonable way to find things. */
+const SEARCH_THRESHOLD = 8;
+
 export default function PantryPage() {
-  const [available, setAvailable] = useState<PantryItem[]>([]);
-  const [needed, setNeeded] = useState<PantryItem[]>([]);
+  const [items, setItems] = useState<PantryItem[]>([]);
+  const [tab, setTab] = useState<Tab>("needed");
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,8 +39,7 @@ export default function PantryPage() {
       const res = await api("/api/pantry");
       if (!res.ok) throw new Error("Could not load your pantry");
       const data = await res.json();
-      setAvailable(data.available);
-      setNeeded(data.needed);
+      setItems([...data.needed, ...data.available]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load your pantry");
     } finally {
@@ -43,6 +50,28 @@ export default function PantryPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const needed = useMemo(() => items.filter((i) => i.status === "needed"), [items]);
+  const available = useMemo(
+    () => items.filter((i) => i.status === "available"),
+    [items]
+  );
+
+  const active = tab === "needed" ? needed : available;
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const rows = q
+      ? active.filter(
+          (i) =>
+            i.label.toLowerCase().includes(q) ||
+            i.name.includes(q) ||
+            // Searching "creamer" should find the row labelled "Half & Half".
+            i.aliases?.some((a) => a.includes(q))
+        )
+      : active;
+    return [...rows].sort((a, b) => a.label.localeCompare(b.label));
+  }, [active, query]);
 
   const handleScan = useCallback(
     async (file: File) => {
@@ -58,13 +87,12 @@ export default function PantryPage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Receipt scan failed");
 
-        const cleared = data.clearedFromList as string[];
+        const cleared: string[] = data.clearedFromList ?? [];
         setFlash(
           `Stocked ${data.stocked.length} item${data.stocked.length === 1 ? "" : "s"}` +
-            (cleared.length
-              ? ` · cleared ${cleared.join(", ")} from your list`
-              : "")
+            (cleared.length ? ` · cleared ${cleared.join(", ")} off your list` : "")
         );
+        setTab("available");
         await load();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Receipt scan failed");
@@ -76,16 +104,10 @@ export default function PantryPage() {
   );
 
   const setStatus = useCallback(
-    async (item: PantryItem, status: "available" | "needed") => {
-      // Optimistic: move it across immediately, roll back if the write fails.
-      const moved = { ...item, status };
-      if (status === "needed") {
-        setAvailable((prev) => prev.filter((i) => i.id !== item.id));
-        setNeeded((prev) => [...prev, moved].sort(byLabel));
-      } else {
-        setNeeded((prev) => prev.filter((i) => i.id !== item.id));
-        setAvailable((prev) => [...prev, moved].sort(byLabel));
-      }
+    async (item: PantryItem, status: Tab) => {
+      setItems((prev) =>
+        prev.map((i) => (i.id === item.id ? { ...i, status } : i))
+      );
 
       const res = await api(`/api/pantry/${item.id}`, {
         method: "PATCH",
@@ -103,9 +125,7 @@ export default function PantryPage() {
 
   const remove = useCallback(
     async (item: PantryItem) => {
-      setAvailable((prev) => prev.filter((i) => i.id !== item.id));
-      setNeeded((prev) => prev.filter((i) => i.id !== item.id));
-
+      setItems((prev) => prev.filter((i) => i.id !== item.id));
       const res = await api(`/api/pantry/${item.id}`, { method: "DELETE" });
       if (!res.ok) {
         setError("Could not remove that item");
@@ -123,7 +143,7 @@ export default function PantryPage() {
     const res = await api("/api/pantry", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label, status: "needed" }),
+      body: JSON.stringify({ label, status: tab }),
     });
 
     if (!res.ok) {
@@ -132,10 +152,12 @@ export default function PantryPage() {
       return;
     }
     load();
-  }, [newItem, load]);
+  }, [newItem, tab, load]);
+
+  const showSearch = active.length > SEARCH_THRESHOLD;
 
   return (
-    <div className="py-4 space-y-4">
+    <div className="pb-4">
       <input
         ref={fileRef}
         type="file"
@@ -149,200 +171,283 @@ export default function PantryPage() {
         }}
       />
 
-      <button
-        onClick={() => fileRef.current?.click()}
-        disabled={scanning}
-        className={cn(
-          "w-full flex items-center justify-center gap-2 rounded-2xl px-4 py-4",
-          "font-medium transition-all duration-200",
-          scanning
-            ? "bg-muted text-muted-foreground cursor-wait"
-            : "bg-primary text-primary-foreground shadow-md hover:shadow-lg active:scale-[0.99]"
-        )}
-      >
-        {scanning ? (
-          <>
-            <Loader2 className="h-5 w-5 animate-spin" />
-            Reading your receipt...
-          </>
-        ) : (
-          <>
-            <Camera className="h-5 w-5" />
-            Scan a receipt
-          </>
-        )}
-      </button>
+      {/* Pinned under the app header so a long list never scrolls the controls
+          — or the other tab's count — out of reach. */}
+      <div className="sticky top-[57px] z-40 -mx-4 px-4 pt-4 pb-3 bg-background/95 backdrop-blur-md border-b border-border/40 space-y-3">
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={scanning}
+          className={cn(
+            "w-full flex items-center justify-center gap-2 rounded-2xl px-4 py-3.5",
+            "font-medium transition-all duration-200",
+            scanning
+              ? "bg-muted text-muted-foreground cursor-wait"
+              : "bg-primary text-primary-foreground shadow-md hover:shadow-lg active:scale-[0.99]"
+          )}
+        >
+          {scanning ? (
+            <>
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Reading your receipt...
+            </>
+          ) : (
+            <>
+              <Camera className="h-5 w-5" />
+              Scan a receipt
+            </>
+          )}
+        </button>
 
-      {flash && (
-        <Banner tone="ok" onDismiss={() => setFlash(null)}>
-          {flash}
-        </Banner>
-      )}
-      {error && (
-        <Banner tone="error" onDismiss={() => setError(null)}>
-          {error}
-        </Banner>
-      )}
-
-      {loading ? (
-        <p className="text-sm text-muted-foreground py-8 text-center">
-          Loading your pantry...
-        </p>
-      ) : (
-        <>
-          <Section
-            title="Shopping list"
+        <div
+          role="tablist"
+          aria-label="Pantry view"
+          className="grid grid-cols-2 gap-1 rounded-xl bg-muted/60 p-1"
+        >
+          <TabButton
+            active={tab === "needed"}
+            onClick={() => {
+              setTab("needed");
+              setQuery("");
+            }}
             icon={<ShoppingCart className="h-4 w-4" />}
+            label="To buy"
             count={needed.length}
-            empty="Nothing to buy. Say &ldquo;we ran out of milk&rdquo; and it lands here."
-            accent="text-amber-600 dark:text-amber-400"
-          >
-            <div className="flex gap-2 pb-2">
-              <input
-                value={newItem}
-                onChange={(e) => setNewItem(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addManual()}
-                placeholder="Add something manually..."
-                className={cn(
-                  "flex-1 rounded-xl border border-border bg-background px-3 py-2",
-                  "text-sm outline-none focus:border-primary/50"
-                )}
-              />
-              <button
-                onClick={addManual}
-                disabled={!newItem.trim()}
-                className={cn(
-                  "h-9 w-9 shrink-0 rounded-xl flex items-center justify-center",
-                  newItem.trim()
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground/40"
-                )}
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            </div>
-
-            {needed.map((item) => (
-              <Row
-                key={item.id}
-                item={item}
-                actionIcon={<Check className="h-4 w-4" />}
-                actionLabel="Mark as bought"
-                onAction={() => setStatus(item, "available")}
-                onRemove={() => remove(item)}
-              />
-            ))}
-          </Section>
-
-          <Section
-            title="Available"
+          />
+          <TabButton
+            active={tab === "available"}
+            onClick={() => {
+              setTab("available");
+              setQuery("");
+            }}
             icon={<Check className="h-4 w-4" />}
+            label="In stock"
             count={available.length}
-            empty="Scan a grocery receipt to fill this in."
-            accent="text-emerald-600 dark:text-emerald-400"
+          />
+        </div>
+
+        {showSearch && (
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={`Search ${active.length} items...`}
+              className={cn(
+                "w-full rounded-xl border border-border bg-background",
+                "pl-9 pr-9 py-2 text-sm outline-none focus:border-primary/50"
+              )}
+            />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground/50 hover:text-foreground hover:bg-accent"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="pt-3 space-y-2">
+        {flash && (
+          <Banner tone="ok" onDismiss={() => setFlash(null)}>
+            {flash}
+          </Banner>
+        )}
+        {error && (
+          <Banner tone="error" onDismiss={() => setError(null)}>
+            {error}
+          </Banner>
+        )}
+
+        <div className="flex gap-2">
+          <input
+            value={newItem}
+            onChange={(e) => setNewItem(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addManual()}
+            placeholder={
+              tab === "needed" ? "Add something to buy..." : "Add something you have..."
+            }
+            className={cn(
+              "flex-1 rounded-xl border border-dashed border-border bg-transparent",
+              "px-3 py-2 text-sm outline-none focus:border-primary/50 focus:border-solid"
+            )}
+          />
+          <button
+            onClick={addManual}
+            disabled={!newItem.trim()}
+            aria-label="Add item"
+            className={cn(
+              "h-9 w-9 shrink-0 rounded-xl flex items-center justify-center transition-colors",
+              newItem.trim()
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground/40"
+            )}
           >
-            {available.map((item) => (
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="space-y-2 pt-2">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-11 rounded-xl bg-muted/50 animate-pulse" />
+            ))}
+          </div>
+        ) : visible.length === 0 ? (
+          <EmptyState tab={tab} searching={query.trim().length > 0} />
+        ) : (
+          <ul className="pt-1">
+            {visible.map((item) => (
               <Row
                 key={item.id}
                 item={item}
-                actionIcon={<ShoppingCart className="h-4 w-4" />}
-                actionLabel="Add to shopping list"
-                onAction={() => setStatus(item, "needed")}
+                tab={tab}
+                onToggle={() =>
+                  setStatus(item, tab === "needed" ? "available" : "needed")
+                }
                 onRemove={() => remove(item)}
               />
             ))}
-          </Section>
-        </>
-      )}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
 
-function byLabel(a: PantryItem, b: PantryItem) {
-  return a.label.localeCompare(b.label);
-}
-
-function Section({
-  title,
+function TabButton({
+  active,
+  onClick,
   icon,
+  label,
   count,
-  empty,
-  accent,
-  children,
 }: {
-  title: string;
+  active: boolean;
+  onClick: () => void;
   icon: React.ReactNode;
+  label: string;
   count: number;
-  empty: string;
-  accent: string;
-  children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-border bg-card p-4">
-      <h2 className={cn("flex items-center gap-2 text-sm font-semibold mb-3", accent)}>
-        {icon}
-        {title}
-        <span className="ml-auto text-xs font-normal text-muted-foreground tabular-nums">
-          {count}
-        </span>
-      </h2>
-      <div className="space-y-1">
-        {children}
-        {count === 0 && (
-          <p className="text-sm text-muted-foreground/60 py-3">{empty}</p>
+    <button
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        "flex items-center justify-center gap-2 rounded-lg px-3 py-2",
+        "text-sm font-medium transition-all duration-150",
+        active
+          ? "bg-background text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground"
+      )}
+    >
+      {icon}
+      {label}
+      <span
+        className={cn(
+          "rounded-full px-1.5 py-0.5 text-[11px] tabular-nums leading-none",
+          active ? "bg-primary/15 text-primary" : "bg-muted-foreground/15"
         )}
-      </div>
-    </section>
+      >
+        {count}
+      </span>
+    </button>
   );
 }
 
 function Row({
   item,
-  actionIcon,
-  actionLabel,
-  onAction,
+  tab,
+  onToggle,
   onRemove,
 }: {
   item: PantryItem;
-  actionIcon: React.ReactNode;
-  actionLabel: string;
-  onAction: () => void;
+  tab: Tab;
+  onToggle: () => void;
   onRemove: () => void;
 }) {
+  const buying = tab === "needed";
+
   return (
-    <div className="group flex items-center gap-2 rounded-xl px-2 py-2 hover:bg-accent/50 transition-colors">
+    <li className="group flex items-center gap-3 rounded-xl px-1 py-1 hover:bg-accent/40 transition-colors">
       <button
-        onClick={onAction}
-        title={actionLabel}
-        aria-label={`${actionLabel}: ${item.label}`}
+        onClick={onToggle}
+        aria-label={
+          buying ? `Mark ${item.label} as bought` : `Add ${item.label} to shopping list`
+        }
+        title={buying ? "Bought it" : "Add to shopping list"}
         className={cn(
-          "h-7 w-7 shrink-0 rounded-lg flex items-center justify-center",
-          "text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
+          "h-10 w-10 shrink-0 rounded-xl flex items-center justify-center transition-colors",
+          buying
+            ? "text-muted-foreground/40 hover:text-emerald-500 hover:bg-emerald-500/10"
+            : "text-muted-foreground/40 hover:text-amber-500 hover:bg-amber-500/10"
         )}
       >
-        {actionIcon}
+        {buying ? (
+          <span className="relative flex items-center justify-center">
+            <Circle className="h-5 w-5" />
+            <Check className="absolute h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </span>
+        ) : (
+          <ShoppingCart className="h-[18px] w-[18px]" />
+        )}
       </button>
 
-      <span className="flex-1 text-sm truncate">{item.label}</span>
+      <span className="flex-1 min-w-0 text-[15px] truncate">{item.label}</span>
 
       {item.quantity && (
-        <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
           {item.quantity}
         </span>
       )}
 
       <button
         onClick={onRemove}
-        title="Remove"
         aria-label={`Remove ${item.label}`}
+        title="Remove"
         className={cn(
-          "h-7 w-7 shrink-0 rounded-lg flex items-center justify-center",
+          "h-9 w-9 shrink-0 rounded-lg flex items-center justify-center",
           "text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10",
           "opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all"
         )}
       >
         <Trash2 className="h-3.5 w-3.5" />
       </button>
+    </li>
+  );
+}
+
+function EmptyState({ tab, searching }: { tab: Tab; searching: boolean }) {
+  if (searching) {
+    return (
+      <p className="text-sm text-muted-foreground/60 text-center py-10">
+        Nothing matches that.
+      </p>
+    );
+  }
+
+  return (
+    <div className="text-center py-10 px-6">
+      {tab === "needed" ? (
+        <>
+          <ShoppingCart className="h-8 w-8 mx-auto mb-3 text-muted-foreground/25" />
+          <p className="text-sm text-muted-foreground/70">Nothing to buy.</p>
+          <p className="text-xs text-muted-foreground/50 mt-1">
+            Say &ldquo;we ran out of milk&rdquo; and it shows up here.
+          </p>
+        </>
+      ) : (
+        <>
+          <Camera className="h-8 w-8 mx-auto mb-3 text-muted-foreground/25" />
+          <p className="text-sm text-muted-foreground/70">Nothing stocked yet.</p>
+          <p className="text-xs text-muted-foreground/50 mt-1">
+            Scan a grocery receipt to fill this in.
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -381,6 +486,7 @@ function Banner({
       </p>
       <button
         onClick={onDismiss}
+        aria-label="Dismiss"
         className="shrink-0 rounded-full p-0.5 opacity-50 hover:opacity-100 transition-opacity"
       >
         <X className="h-3.5 w-3.5" />

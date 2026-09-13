@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useSession, signOut } from "next-auth/react";
-import { LogOut, Sun, Moon } from "lucide-react";
+import Link from "next/link";
+import { BarChart3, LogOut, Sun, Moon } from "lucide-react";
 
 export function UserMenu() {
   const { data: session } = useSession();
@@ -74,6 +75,15 @@ export function UserMenu() {
           </div>
 
           <div className="p-1">
+            <Link
+              href="/insights"
+              onClick={() => setOpen(false)}
+              className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-accent transition-colors"
+            >
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              Insights
+            </Link>
+
             <button
               onClick={toggleTheme}
               className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-accent transition-colors"

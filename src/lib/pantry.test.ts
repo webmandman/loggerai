@@ -2,7 +2,18 @@
 // Relative import on purpose — the "@/" alias does not resolve under bare node.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeItemName, resolveKey, toPantryRows } from "./normalize.ts";
+import {
+  matchKey,
+  mergeAliases,
+  normalizeItemName,
+  toPantryRows,
+} from "./normalize.ts";
+
+/** Test helper: build the {name, aliases} shape matchKey expects. */
+const pantry = (...rows: Array<string | [string, string[]]>) =>
+  rows.map((r) =>
+    typeof r === "string" ? { name: r, aliases: [] } : { name: r[0], aliases: r[1] }
+  );
 
 test("collapses case and whitespace", () => {
   assert.equal(normalizeItemName("  Bananas  "), "banana");
@@ -90,25 +101,61 @@ test("quantity is cleared when an item moves to the shopping list", () => {
 });
 
 test("a loosely-spoken name resolves onto the item already in the pantry", () => {
-  const pantry = ["greek yogurt", "banana", "olive oil"];
+  const rows = pantry("greek yogurt", "banana", "olive oil");
   // "the kids finished the yogurt" should clear the greek yogurt row.
-  assert.equal(resolveKey("yogurt", pantry), "greek yogurt");
+  assert.deepEqual(matchKey("yogurt", rows), { name: "greek yogurt", via: "subset" });
   // And the reverse direction, when the receipt was the vaguer of the two.
-  assert.equal(resolveKey("extra virgin olive oil", pantry), "olive oil");
+  assert.deepEqual(matchKey("extra virgin olive oil", rows), {
+    name: "olive oil",
+    via: "subset",
+  });
 });
 
-test("an exact match always wins over any alias resolution", () => {
-  assert.equal(resolveKey("yogurt", ["yogurt", "greek yogurt"]), "yogurt");
+test("an exact match always wins over any looser resolution", () => {
+  assert.deepEqual(matchKey("yogurt", pantry("yogurt", "greek yogurt")), {
+    name: "yogurt",
+    via: "exact",
+  });
 });
 
 test("an ambiguous name gets its own row instead of a wrong guess", () => {
   // "milk" could mean either; guessing would clear the wrong one.
-  assert.equal(resolveKey("milk", ["whole milk", "oat milk"]), "milk");
+  assert.deepEqual(matchKey("milk", pantry("whole milk", "oat milk")), {
+    name: "milk",
+    via: "none",
+  });
 });
 
 test("unrelated items never resolve onto each other", () => {
-  assert.equal(resolveKey("saffron", ["banana", "greek yogurt"]), "saffron");
-  assert.equal(resolveKey("", ["banana"]), "");
+  assert.equal(matchKey("saffron", pantry("banana", "greek yogurt")).via, "none");
+  assert.equal(matchKey("", pantry("banana")).via, "none");
+});
+
+test("an alias reaches a synonym that shares no words", () => {
+  // The whole reason the alias column exists: word-subset cannot get here.
+  const rows = pantry(["half and half", ["creamer", "coffee creamer"]], "banana");
+  assert.deepEqual(matchKey("creamer", rows), { name: "half and half", via: "alias" });
+  assert.equal(matchKey("creamer", pantry("half and half")).via, "none");
+});
+
+test("aliases lose to an exact name and win over a word-subset match", () => {
+  const rows = pantry(["green onion", ["scallion"]], "onion");
+  assert.equal(matchKey("scallion", rows).name, "green onion");
+  // "onion" is exact on its own row, so it must not be pulled into green onion.
+  assert.deepEqual(matchKey("onion", rows), { name: "onion", via: "exact" });
+});
+
+test("an alias claimed by two items is treated as ambiguous", () => {
+  const rows = pantry(["whole milk", ["milk"]], ["oat milk", ["milk"]]);
+  assert.deepEqual(matchKey("milk", rows), { name: "milk", via: "none" });
+});
+
+test("merged aliases are normalized, deduped, and never the item's own name", () => {
+  assert.deepEqual(
+    mergeAliases("half and half", ["Creamers", "creamer"], ["HALF AND HALF"], ["cream"]),
+    ["cream", "creamer"]
+  );
+  assert.deepEqual(mergeAliases("banana", undefined, []), []);
 });
 
 test("THE LOOP: receipt -> ran out -> receipt lands on the same key each time", () => {
@@ -136,4 +183,16 @@ test("THE LOOP: receipt -> ran out -> receipt lands on the same key each time", 
   assert.equal(fromNextReceipt[0].name, "banana");
   assert.equal(fromMessage[0].status, "needed");
   assert.equal(fromNextReceipt[0].status, "available");
+});
+
+test("THE LOOP via alias: buy half & half, run out of 'creamer', buy again", () => {
+  // No shared words anywhere in this chain — only the alias column connects it.
+  const stocked = { name: "half and half", aliases: ["creamer"] };
+
+  const spoken = matchKey(normalizeItemName("creamer"), [stocked]);
+  assert.deepEqual(spoken, { name: "half and half", via: "alias" });
+
+  // Next receipt lands on that same row, clearing it off the shopping list.
+  const rescanned = matchKey(normalizeItemName("Half & Half"), [stocked]);
+  assert.equal(rescanned.name, "half and half");
 });

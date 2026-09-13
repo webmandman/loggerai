@@ -62,6 +62,10 @@ model PantryItem {
   id        String   @id @default(cuid())
   name      String   @unique // normalized dedupe key, e.g. "banana"
   label     String // display name, e.g. "Bananas"
+  /// JSON array of other everyday names for this item, e.g. ["creamer"] on
+  /// "half and half". Covers synonyms that share no words, which word-subset
+  /// matching alone cannot reach. Seeded by the model, then learned over time.
+  aliases   String   @default("[]")
   quantity  String? // "2.4 lb", "3" — display only, never used in arithmetic
   status    String // "available" | "needed"
   source    String // "receipt" | "message" | "manual"

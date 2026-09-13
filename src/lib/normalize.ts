@@ -56,32 +56,71 @@ export function toPantryRows(
   return [...seen.values()].map((row) => ({ ...row, status, source }));
 }
 
+export interface ExistingItem {
+  name: string;
+  aliases: string[];
+}
+
+export interface KeyMatch {
+  /** The row to write to — an existing item's name, or `incoming` for a new row. */
+  name: string;
+  /** How it matched. "none" means no existing row fits; write a new one. */
+  via: "exact" | "alias" | "subset" | "none";
+}
+
 /**
  * Map a loosely-spoken key onto an item already in the pantry.
  *
  * A receipt says "greek yogurt"; you say "we finished the yogurt". Without this
- * those are two rows and the shopping list never clears. Matches only when one
- * key's words are a strict subset of the other's, and only when exactly one
- * candidate qualifies — an ambiguous match gets its own row rather than a wrong
- * guess.
+ * they are two rows and the shopping list never clears.
  *
- * ponytail: word-subset matching, no fuzzy distance. If real misses show up
- * ("creamer" vs "coffee creamer half and half"), the upgrade is an alias column,
- * not a similarity library.
+ * Three passes, most-certain first:
+ *  1. exact name
+ *  2. a stored alias — the only pass that reaches synonyms sharing no words
+ *     ("half and half" / "creamer", "scallion" / "green onion")
+ *  3. strict word-subset ("yogurt" inside "greek yogurt")
+ *
+ * Passes 2 and 3 require exactly one candidate. Ambiguity ("milk" against both
+ * "whole milk" and "oat milk") returns "none" and gets its own row — a wrong
+ * merge is worse than a duplicate, because it silently clears the wrong item.
  */
-export function resolveKey(incoming: string, existingNames: string[]): string {
-  if (!incoming || existingNames.includes(incoming)) return incoming;
+export function matchKey(incoming: string, existing: ExistingItem[]): KeyMatch {
+  if (!incoming) return { name: incoming, via: "none" };
+
+  if (existing.some((e) => e.name === incoming)) {
+    return { name: incoming, via: "exact" };
+  }
+
+  const byAlias = existing.filter((e) => e.aliases.includes(incoming));
+  if (byAlias.length === 1) return { name: byAlias[0].name, via: "alias" };
+  if (byAlias.length > 1) return { name: incoming, via: "none" };
 
   const words = new Set(incoming.split(" "));
-
-  const candidates = existingNames.filter((existing) => {
-    const other = new Set(existing.split(" "));
+  const bySubset = existing.filter((e) => {
+    const other = new Set(e.name.split(" "));
     if (other.size === words.size) return false; // same length, genuinely different
     const [small, big] = words.size < other.size ? [words, other] : [other, words];
     return [...small].every((w) => big.has(w));
   });
 
-  return candidates.length === 1 ? candidates[0] : incoming;
+  return bySubset.length === 1
+    ? { name: bySubset[0].name, via: "subset" }
+    : { name: incoming, via: "none" };
+}
+
+/** Merge alias lists, normalized and deduped, never including the row's own name. */
+export function mergeAliases(
+  own: string,
+  ...lists: Array<string[] | undefined>
+): string[] {
+  const out = new Set<string>();
+  for (const list of lists ?? []) {
+    for (const raw of list ?? []) {
+      const key = normalizeItemName(raw);
+      if (key && key !== own) out.add(key);
+    }
+  }
+  return [...out].sort();
 }
 
 function singularize(word: string): string {

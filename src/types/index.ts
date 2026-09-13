@@ -7,12 +7,15 @@ export interface PantryInput {
   name: string;
   label: string;
   quantity?: string | null;
+  /** Other everyday names for the same item, e.g. ["creamer"] on half and half. */
+  aliases?: string[];
 }
 
 export interface PantryItem {
   id: string;
   name: string;
   label: string;
+  aliases: string[];
   quantity: string | null;
   status: "available" | "needed";
   source: string;

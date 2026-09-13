@@ -80,7 +80,7 @@ export async function processLogEntry(
     Task/work: project, estimatedHours, priority, blockers
     Food/health: meal, calories, ingredients, symptoms
   Only include keys that are clearly present or inferable from the text. Use null for mentioned-but-unknown values. Return {} if no structured data can be extracted.
-- "consumed": An array of grocery/food items the entry says are now GONE — used up, finished, eaten, expired, or run out. Examples that qualify: "we ran out of bananas", "I just ate the last of the dried mango", "the milk went bad", "finished the coffee". Each element is an object: { "name": singular lowercase key e.g. "banana", "label": natural display name e.g. "Bananas" }. Return [] unless the entry clearly states the item is depleted — merely eating or mentioning a food ("had eggs for breakfast", "bought apples") does NOT qualify.
+- "consumed": An array of grocery/food items the entry says are now GONE — used up, finished, eaten, expired, or run out. Examples that qualify: "we ran out of bananas", "I just ate the last of the dried mango", "the milk went bad", "finished the coffee". Each element is an object: { "name": singular lowercase key e.g. "banana", "label": natural display name e.g. "Bananas", "aliases": array of other everyday names for the same item, especially ones sharing no words with "name" (e.g. ["creamer"] for half and half) — empty array if none apply }. Return [] unless the entry clearly states the item is depleted — merely eating or mentioning a food ("had eggs for breakfast", "bought apples") does NOT qualify.
 
 Return ONLY valid JSON, no markdown formatting or code blocks.
 
@@ -145,6 +145,9 @@ function normalizePantryInputs(raw: unknown): PantryInput[] {
           name: name || label,
           label: label || name,
           quantity: typeof rec.quantity === "string" ? rec.quantity.trim() : null,
+          aliases: Array.isArray(rec.aliases)
+            ? rec.aliases.filter((a): a is string => typeof a === "string")
+            : [],
         },
       ];
     }
@@ -181,8 +184,14 @@ const RECEIPT_SCHEMA = {
             type: ["string", "null"],
             description: 'Quantity as printed, e.g. "2.4 lb" or "3". Null if absent.',
           },
+          aliases: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              'Other everyday names a household might call this item, especially ones sharing no words with "name" (e.g. "creamer" for half and half, "green onion" for scallion, "soda" for cola). Empty array if there is no common alternative.',
+          },
         },
-        required: ["name", "label", "quantity"],
+        required: ["name", "label", "quantity", "aliases"],
         additionalProperties: false,
       },
     },
@@ -202,6 +211,7 @@ Rules:
 - "name" is a singular, lowercase, brand-free key used to match this item across receipts and everyday speech. Strip brands, sizes, PLU codes and abbreviations.
 - "label" is the friendly display name, title case.
 - "quantity" is copied from the receipt as printed; null when the line shows no count or weight.
+- "aliases" are the other everyday names for the same item, lowercase and singular. Include one only when a household would plausibly say it instead ("creamer" for half and half, "soda" for cola, "cilantro" for coriander). Leave it empty rather than inventing near-misses.
 - Skip subtotals, tax, totals, payment lines, coupons, loyalty points and bag fees.
 - If the image is not a receipt, return an empty items array.`;
 
@@ -244,7 +254,12 @@ export async function extractReceipt(
   const parsed = JSON.parse(text) as {
     store?: string | null;
     purchasedAt?: string | null;
-    items?: Array<{ name?: string; label?: string; quantity?: string | null }>;
+    items?: Array<{
+      name?: string;
+      label?: string;
+      quantity?: string | null;
+      aliases?: unknown;
+    }>;
   };
 
   const items: PantryInput[] = (parsed.items ?? [])
@@ -252,6 +267,9 @@ export async function extractReceipt(
       name: (i.name || i.label || "").trim(),
       label: (i.label || i.name || "").trim(),
       quantity: i.quantity?.trim() || null,
+      aliases: Array.isArray(i.aliases)
+        ? i.aliases.filter((a): a is string => typeof a === "string")
+        : [],
     }))
     .filter((i) => i.name.length > 0);
 

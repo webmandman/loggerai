@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-guard";
 import { extractReceipt, type ReceiptMediaType } from "@/lib/ai";
-import { markAvailable, normalizeItemName } from "@/lib/pantry";
+import { markAvailable, resolveNames } from "@/lib/pantry";
 import { parseLocalDate } from "@/lib/utils";
 
 // Vision on a full receipt runs well past the 10s serverless default; without
@@ -80,7 +80,9 @@ export async function POST(request: NextRequest) {
 
   // Which of these were on the shopping list before this scan? Read it first —
   // markAvailable is what clears them, so afterwards the answer is gone.
-  const names = scan.items.map((i) => normalizeItemName(i.name)).filter(Boolean);
+  // Resolve through aliases first, so a receipt line "Half & Half" is known to
+  // clear a shopping-list row added as "creamer".
+  const names = await resolveNames(scan.items);
   const clearedFromList = (
     await prisma.pantryItem.findMany({
       where: { name: { in: names }, status: "needed" },
