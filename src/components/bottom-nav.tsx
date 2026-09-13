@@ -3,7 +3,7 @@
 import { useCallback, useRef, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { List, BarChart3, Mic } from "lucide-react";
+import { List, BarChart3, Mic, ShoppingBasket } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSpeech } from "@/lib/speech-context";
 
@@ -66,19 +66,25 @@ export function BottomNav() {
 
   const isFeed = pathname === "/feed";
   const isInsights = pathname === "/insights";
+  const isPantry = pathname === "/pantry";
+
+  const linkClass = (active: boolean) =>
+    cn(
+      "flex flex-col items-center gap-0.5 py-2 px-2 transition-colors",
+      active ? "text-primary" : "text-muted-foreground hover:text-foreground"
+    );
 
   return (
     <nav className="fixed bottom-0 inset-x-0 z-50 border-t bg-background/80 backdrop-blur-md">
-      <div className="mx-auto max-w-2xl flex items-end justify-around px-6 h-16">
-        <Link
-          href="/feed"
-          className={cn(
-            "flex flex-col items-center gap-0.5 py-2 px-3 transition-colors",
-            isFeed ? "text-primary" : "text-muted-foreground hover:text-foreground"
-          )}
-        >
+      <div className="mx-auto max-w-2xl flex items-end justify-around px-3 h-16">
+        <Link href="/feed" className={linkClass(isFeed)}>
           <List className="h-5 w-5" />
           <span className="text-[10px] font-medium">Feed</span>
+        </Link>
+
+        <Link href="/pantry" className={linkClass(isPantry)}>
+          <ShoppingBasket className="h-5 w-5" />
+          <span className="text-[10px] font-medium">Pantry</span>
         </Link>
 
         <button
@@ -125,13 +131,7 @@ export function BottomNav() {
           )}
         </button>
 
-        <Link
-          href="/insights"
-          className={cn(
-            "flex flex-col items-center gap-0.5 py-2 px-3 transition-colors",
-            isInsights ? "text-primary" : "text-muted-foreground hover:text-foreground"
-          )}
-        >
+        <Link href="/insights" className={linkClass(isInsights)}>
           <BarChart3 className="h-5 w-5" />
           <span className="text-[10px] font-medium">Insights</span>
         </Link>

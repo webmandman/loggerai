@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-guard";
 import Anthropic from "@anthropic-ai/sdk";
-import { MODEL } from "@/lib/ai";
+import { MODEL, textFrom } from "@/lib/ai";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -41,7 +41,7 @@ export async function GET() {
       ],
     });
 
-    const text = message.content[0].type === "text" ? message.content[0].text : "[]";
+    const text = textFrom(message) || "[]";
 
     try {
       const insights = JSON.parse(text);

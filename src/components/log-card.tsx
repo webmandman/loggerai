@@ -73,6 +73,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   bug: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
   question: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200",
   achievement: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  grocery: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
   other: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200",
 };
 

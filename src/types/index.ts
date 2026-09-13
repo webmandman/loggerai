@@ -3,6 +3,29 @@ export interface ActionItem {
   done: boolean;
 }
 
+export interface PantryInput {
+  name: string;
+  label: string;
+  quantity?: string | null;
+}
+
+export interface PantryItem {
+  id: string;
+  name: string;
+  label: string;
+  quantity: string | null;
+  status: "available" | "needed";
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReceiptScan {
+  store: string | null;
+  purchasedAt: string | null;
+  items: PantryInput[];
+}
+
 export interface ProcessedLogEntry {
   summary: string;
   category: string;
@@ -11,6 +34,8 @@ export interface ProcessedLogEntry {
   mood: string | null;
   metadata: Record<string, unknown>;
   occurredAt: string | null;
+  /** Food the entry says is now gone — gets pushed onto the shopping list. */
+  consumed: PantryInput[];
 }
 
 export interface LogEntry {
@@ -49,6 +74,7 @@ export const CATEGORIES = [
   "bug",
   "question",
   "achievement",
+  "grocery",
   "other",
 ] as const;
 

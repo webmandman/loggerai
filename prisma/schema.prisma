@@ -54,6 +54,23 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+/// Shared household grocery state. One row per distinct food item.
+/// "Available food" and "shopping list" are the same table split by `status`,
+/// which is what makes scanning a receipt remove items from the shopping list
+/// for free — it is the same upsert that adds them.
+model PantryItem {
+  id        String   @id @default(cuid())
+  name      String   @unique // normalized dedupe key, e.g. "banana"
+  label     String // display name, e.g. "Bananas"
+  quantity  String? // "2.4 lb", "3" — display only, never used in arithmetic
+  status    String // "available" | "needed"
+  source    String // "receipt" | "message" | "manual"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
 model LogEntry {
   id          String   @id @default(cuid())
   rawInput    String

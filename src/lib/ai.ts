@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ProcessedLogEntry, QueryResult } from "@/types";
+import type { PantryInput, ProcessedLogEntry, QueryResult, ReceiptScan } from "@/types";
 import { toLocalDateStr } from "@/lib/utils";
 
 export const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
@@ -7,6 +7,23 @@ export const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+/**
+ * Pull the assistant's text out of a response.
+ *
+ * Do NOT go back to reading `content[0]`. Current models run adaptive thinking
+ * by default, so block 0 is a thinking block whose text is empty — indexing it
+ * yields "" and every JSON.parse below silently falls into its catch, which is
+ * how entries end up categorised "note" with no tags. Models also like to wrap
+ * JSON in ```json fences even when told not to, so strip those here too.
+ */
+export function textFrom(message: Anthropic.Message): string {
+  const block = message.content.find((b) => b.type === "text");
+  const raw = block && block.type === "text" ? block.text.trim() : "";
+
+  const fenced = raw.match(/^```(?:json)?\s*\n([\s\S]*?)\n?```$/);
+  return (fenced ? fenced[1] : raw).trim();
+}
 
 export async function classifyIntent(
   input: string
@@ -33,10 +50,7 @@ ${input}
     ],
   });
 
-  const text =
-    message.content[0].type === "text"
-      ? message.content[0].text.trim().toLowerCase()
-      : "";
+  const text = textFrom(message).toLowerCase();
 
   if (text === "query") return "query";
   if (text === "reject") return "reject";
@@ -55,7 +69,7 @@ export async function processLogEntry(
         content: `You are an AI assistant that processes personal log entries. Today's date is ${toLocalDateStr()}. Analyze the following log entry and return a JSON object with these fields:
 
 - "summary": A concise one-line summary (max 100 chars)
-- "category": One of: task, idea, meeting, personal, note, reminder, bug, question, achievement, other
+- "category": One of: task, idea, meeting, personal, note, reminder, bug, question, achievement, grocery, other
 - "tags": An array of 1-5 relevant keyword tags (lowercase, no spaces)
 - "actionItems": An array of action items or tasks extracted from the text (empty array if none)
 - "mood": The detected mood/sentiment as a single word (e.g., "positive", "neutral", "frustrated", "excited", "anxious") or null if not discernible
@@ -66,6 +80,7 @@ export async function processLogEntry(
     Task/work: project, estimatedHours, priority, blockers
     Food/health: meal, calories, ingredients, symptoms
   Only include keys that are clearly present or inferable from the text. Use null for mentioned-but-unknown values. Return {} if no structured data can be extracted.
+- "consumed": An array of grocery/food items the entry says are now GONE — used up, finished, eaten, expired, or run out. Examples that qualify: "we ran out of bananas", "I just ate the last of the dried mango", "the milk went bad", "finished the coffee". Each element is an object: { "name": singular lowercase key e.g. "banana", "label": natural display name e.g. "Bananas" }. Return [] unless the entry clearly states the item is depleted — merely eating or mentioning a food ("had eggs for breakfast", "bought apples") does NOT qualify.
 
 Return ONLY valid JSON, no markdown formatting or code blocks.
 
@@ -77,8 +92,7 @@ ${rawInput}
     ],
   });
 
-  const text =
-    message.content[0].type === "text" ? message.content[0].text : "";
+  const text = textFrom(message);
 
   try {
     const parsed = JSON.parse(text);
@@ -97,6 +111,7 @@ ${rawInput}
           ? parsed.metadata
           : {},
       occurredAt: typeof parsed.occurredAt === "string" ? parsed.occurredAt : null,
+      consumed: normalizePantryInputs(parsed.consumed),
     };
   } catch {
     return {
@@ -107,8 +122,144 @@ ${rawInput}
       mood: null,
       metadata: {},
       occurredAt: null,
+      consumed: [],
     };
   }
+}
+
+/** Accepts the model's `[{name,label}]` or a bare `["bananas"]` and both survive. */
+function normalizePantryInputs(raw: unknown): PantryInput[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw.flatMap((item): PantryInput[] => {
+    if (typeof item === "string" && item.trim()) {
+      return [{ name: item.trim(), label: item.trim() }];
+    }
+    if (item && typeof item === "object") {
+      const rec = item as Record<string, unknown>;
+      const label = typeof rec.label === "string" ? rec.label.trim() : "";
+      const name = typeof rec.name === "string" ? rec.name.trim() : "";
+      if (!label && !name) return [];
+      return [
+        {
+          name: name || label,
+          label: label || name,
+          quantity: typeof rec.quantity === "string" ? rec.quantity.trim() : null,
+        },
+      ];
+    }
+    return [];
+  });
+}
+
+const RECEIPT_SCHEMA = {
+  type: "object",
+  properties: {
+    store: {
+      type: ["string", "null"],
+      description: "Store name as printed on the receipt, or null if not legible.",
+    },
+    purchasedAt: {
+      type: ["string", "null"],
+      description: "Receipt date as YYYY-MM-DD, or null if not legible.",
+    },
+    items: {
+      type: "array",
+      description: "Every food or household item purchased. Omit non-items.",
+      items: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: 'Singular lowercase brand-free key, e.g. "banana".',
+          },
+          label: {
+            type: "string",
+            description: 'Natural display name, title case, e.g. "Bananas".',
+          },
+          quantity: {
+            type: ["string", "null"],
+            description: 'Quantity as printed, e.g. "2.4 lb" or "3". Null if absent.',
+          },
+        },
+        required: ["name", "label", "quantity"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["store", "purchasedAt", "items"],
+  additionalProperties: false,
+};
+
+const RECEIPT_PROMPT = `Extract every purchased item from this grocery receipt.
+
+Receipt lines are abbreviated and noisy. Turn each into the everyday food name a person would use:
+- "BANANAS ORGANIC 4011" -> name "banana", label "Bananas"
+- "GG WHL MLK 1GAL" -> name "milk", label "Whole Milk", quantity "1 gal"
+- "CHKN BRST BNLS" -> name "chicken breast", label "Chicken Breast"
+
+Rules:
+- "name" is a singular, lowercase, brand-free key used to match this item across receipts and everyday speech. Strip brands, sizes, PLU codes and abbreviations.
+- "label" is the friendly display name, title case.
+- "quantity" is copied from the receipt as printed; null when the line shows no count or weight.
+- Skip subtotals, tax, totals, payment lines, coupons, loyalty points and bag fees.
+- If the image is not a receipt, return an empty items array.`;
+
+export type ReceiptMediaType = "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+
+/**
+ * Read a grocery receipt photo into a clean item list.
+ *
+ * Uses structured outputs rather than this file's older "return ONLY valid JSON"
+ * + try/JSON.parse convention on purpose: there, one stray token degrades
+ * silently, which for a receipt would mean a quietly empty pantry.
+ */
+export async function extractReceipt(
+  base64Image: string,
+  mediaType: ReceiptMediaType
+): Promise<ReceiptScan> {
+  const message = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 4096,
+    output_config: { format: { type: "json_schema", schema: RECEIPT_SCHEMA } },
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: mediaType, data: base64Image },
+          },
+          { type: "text", text: RECEIPT_PROMPT },
+        ],
+      },
+    ],
+  });
+
+  const text = textFrom(message);
+  if (!text) {
+    throw new Error("The model returned no receipt data. Try a clearer photo.");
+  }
+
+  const parsed = JSON.parse(text) as {
+    store?: string | null;
+    purchasedAt?: string | null;
+    items?: Array<{ name?: string; label?: string; quantity?: string | null }>;
+  };
+
+  const items: PantryInput[] = (parsed.items ?? [])
+    .map((i) => ({
+      name: (i.name || i.label || "").trim(),
+      label: (i.label || i.name || "").trim(),
+      quantity: i.quantity?.trim() || null,
+    }))
+    .filter((i) => i.name.length > 0);
+
+  return {
+    store: parsed.store?.trim() || null,
+    purchasedAt: typeof parsed.purchasedAt === "string" ? parsed.purchasedAt : null,
+    items,
+  };
 }
 
 export async function queryLogs(
@@ -157,8 +308,7 @@ Return ONLY valid JSON, no markdown formatting or code blocks.`,
     ],
   });
 
-  const text =
-    message.content[0].type === "text" ? message.content[0].text : "";
+  const text = textFrom(message);
 
   try {
     const parsed = JSON.parse(text);
@@ -250,7 +400,7 @@ export function queryLogsStreaming(
         });
 
         const finalMessage = await stream.finalMessage();
-        const fullContent = finalMessage.content[0].type === "text" ? finalMessage.content[0].text : fullText;
+        const fullContent = textFrom(finalMessage) || fullText;
 
         let relevantEntryIds: string[] = [];
         const markerIdx = fullContent.indexOf("---ENTRY_IDS---");
