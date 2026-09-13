@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-guard";
 import Anthropic from "@anthropic-ai/sdk";
+import { MODEL } from "@/lib/ai";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -30,7 +31,7 @@ export async function GET() {
       .join("\n");
 
     const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: MODEL,
       max_tokens: 256,
       messages: [
         {

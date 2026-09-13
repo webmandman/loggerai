@@ -23,9 +23,14 @@ export async function POST(request: NextRequest) {
   let intent: "log" | "query" | "reject";
   try {
     intent = await classifyIntent(trimmed);
-  } catch {
+  } catch (err) {
+    console.error("classifyIntent failed", err);
     return NextResponse.json(
-      { error: "Failed to classify intent. Please try again." },
+      {
+        error: `Failed to classify intent: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      },
       { status: 500 }
     );
   }

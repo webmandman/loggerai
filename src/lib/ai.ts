@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { ProcessedLogEntry, QueryResult } from "@/types";
 import { toLocalDateStr } from "@/lib/utils";
 
+export const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
@@ -10,7 +12,7 @@ export async function classifyIntent(
   input: string
 ): Promise<"log" | "query" | "reject"> {
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: MODEL,
     max_tokens: 16,
     messages: [
       {
@@ -45,7 +47,7 @@ export async function processLogEntry(
   rawInput: string
 ): Promise<ProcessedLogEntry> {
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: MODEL,
     max_tokens: 1024,
     messages: [
       {
@@ -130,7 +132,7 @@ export async function queryLogs(
     .join("\n");
 
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: MODEL,
     max_tokens: 1024,
     messages: [
       {
@@ -232,7 +234,7 @@ export function queryLogsStreaming(
     async start(controller) {
       try {
         const stream = anthropic.messages.stream({
-          model: "claude-sonnet-4-20250514",
+          model: MODEL,
           max_tokens: 1024,
           messages: [{ role: "user", content: prompt }],
         });
