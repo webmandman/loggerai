@@ -10,6 +10,8 @@ import {
   Pencil,
   Check,
   X,
+  ShoppingBasket,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -103,7 +105,33 @@ export function LogCard({ entry, onActionItemToggle, onDelete, onEditSummary, cl
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(entry.summary);
+  const [sendingToPantry, setSendingToPantry] = useState(false);
+  const [pantryResult, setPantryResult] = useState<{ ok: boolean; message: string } | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSendToPantry = async () => {
+    setSendingToPantry(true);
+    setPantryResult(null);
+
+    try {
+      const res = await fetch(`/api/logs/${entry.id}/pantry`, { method: "POST" });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setPantryResult({ ok: false, message: data.error || "Could not read that entry" });
+        return;
+      }
+
+      const parts: string[] = [];
+      if (data.stocked.length) parts.push(`stocked ${data.stocked.length}`);
+      if (data.needed.length) parts.push(`${data.needed.length} to buy`);
+      setPantryResult({ ok: true, message: parts.join(" · ") });
+    } catch {
+      setPantryResult({ ok: false, message: "Could not reach the server" });
+    } finally {
+      setSendingToPantry(false);
+    }
+  };
 
   const date = new Date(entry.createdAt);
   const timeStr = date.toLocaleTimeString([], {
@@ -262,8 +290,35 @@ export function LogCard({ entry, onActionItemToggle, onDelete, onEditSummary, cl
             <p className="text-sm text-muted-foreground whitespace-pre-wrap">
               {entry.rawInput}
             </p>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs text-muted-foreground hover:text-primary"
+                  disabled={sendingToPantry}
+                  onClick={handleSendToPantry}
+                >
+                  {sendingToPantry ? (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  ) : (
+                    <ShoppingBasket className="h-3 w-3 mr-1" />
+                  )}
+                  {sendingToPantry ? "Reading..." : "Send to pantry"}
+                </Button>
+                {pantryResult && (
+                  <span
+                    className={`text-xs truncate ${
+                      pantryResult.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
+                    }`}
+                  >
+                    {pantryResult.message}
+                  </span>
+                )}
+              </div>
+
             {onDelete && (
-              <div className="flex justify-end">
+              <div className="flex justify-end shrink-0">
                 {confirmDelete ? (
                   <div className="flex items-center gap-2 animate-in fade-in duration-150">
                     <span className="text-xs text-muted-foreground">Delete this entry?</span>
@@ -282,6 +337,7 @@ export function LogCard({ entry, onActionItemToggle, onDelete, onEditSummary, cl
                 )}
               </div>
             )}
+            </div>
           </div>
         )}
       </CardContent>

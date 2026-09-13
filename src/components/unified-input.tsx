@@ -11,7 +11,9 @@ import {
   Search,
   BookOpen,
   AlertCircle,
+  ShoppingBasket,
 } from "lucide-react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useSpeech } from "@/lib/speech-context";
@@ -38,6 +40,7 @@ export function UnifiedInput({
   const [inputMethod, setInputMethod] = useState<InputMethod>("text");
   const [processingPhase, setProcessingPhase] = useState<ProcessingPhase>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pantryNote, setPantryNote] = useState<string | null>(null);
   const [isFocused, setIsFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const holdingRef = useRef(false);
@@ -76,6 +79,7 @@ export function UnifiedInput({
     if (isListening) stopListening();
 
     setError(null);
+    setPantryNote(null);
     setProcessingPhase("classifying");
 
     try {
@@ -153,6 +157,20 @@ export function UnifiedInput({
       } else {
         setProcessingPhase("logging");
         onLog(data.entry);
+
+        // Pantry writes are a side effect of logging, so without this the
+        // entry looks like a plain note and there is no sign anything was
+        // stocked short of opening the Pantry tab.
+        const stocked: string[] = data.addedToPantry ?? [];
+        const needed: string[] = data.addedToShoppingList ?? [];
+        const parts: string[] = [];
+        if (stocked.length) {
+          parts.push(`Stocked ${stocked.length} item${stocked.length === 1 ? "" : "s"}`);
+        }
+        if (needed.length) {
+          parts.push(`${needed.length} added to your shopping list`);
+        }
+        setPantryNote(parts.length ? parts.join(" · ") : null);
       }
 
       setText("");
@@ -400,6 +418,28 @@ export function UnifiedInput({
           </div>
         </div>
       </div>
+
+      {pantryNote && !activeError && (
+        <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-3 py-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+          <ShoppingBasket className="h-4 w-4 text-emerald-500 shrink-0" />
+          <p className="text-sm text-emerald-700 dark:text-emerald-300 flex-1">
+            {pantryNote}
+          </p>
+          <Link
+            href="/pantry"
+            className="shrink-0 text-xs font-medium text-emerald-700 dark:text-emerald-300 underline underline-offset-2 hover:no-underline"
+          >
+            View
+          </Link>
+          <button
+            onClick={() => setPantryNote(null)}
+            aria-label="Dismiss"
+            className="text-emerald-600/50 hover:text-emerald-600 transition-colors shrink-0 rounded-full p-0.5"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {activeError && (
         <div className="flex items-center gap-2 rounded-xl bg-destructive/10 border border-destructive/20 px-3 py-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
