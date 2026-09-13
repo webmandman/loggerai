@@ -3,7 +3,7 @@
 import { useCallback, useRef, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { List, Mic, ShoppingBasket } from "lucide-react";
+import { ChefHat, List, Mic, ShoppingBasket } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSpeech } from "@/lib/speech-context";
 
@@ -66,6 +66,7 @@ export function BottomNav() {
 
   const isFeed = pathname === "/feed";
   const isPantry = pathname === "/pantry";
+  const isRecipes = pathname === "/recipes";
 
   const linkClass = (active: boolean) =>
     cn(
@@ -75,12 +76,17 @@ export function BottomNav() {
 
   return (
     <nav className="fixed bottom-0 inset-x-0 z-50 border-t bg-background/80 backdrop-blur-md">
-      <div className="mx-auto max-w-2xl flex items-end justify-around px-6 h-16">
-        <Link href="/feed" className={linkClass(isFeed)}>
-          <List className="h-5 w-5" />
-          <span className="text-[10px] font-medium">Feed</span>
-        </Link>
-
+      <div className="mx-auto max-w-2xl flex items-end justify-between px-6 h-16">
+        <div className="flex-1 flex items-end justify-around">
+          <Link href="/feed" className={linkClass(isFeed)}>
+            <List className="h-5 w-5" />
+            <span className="text-[10px] font-medium">Feed</span>
+          </Link>
+          <Link href="/pantry" className={linkClass(isPantry)}>
+            <ShoppingBasket className="h-5 w-5" />
+            <span className="text-[10px] font-medium">Pantry</span>
+          </Link>
+        </div>
 
         <button
           onPointerDown={handlePointerDown}
@@ -126,10 +132,12 @@ export function BottomNav() {
           )}
         </button>
 
-        <Link href="/pantry" className={linkClass(isPantry)}>
-          <ShoppingBasket className="h-5 w-5" />
-          <span className="text-[10px] font-medium">Pantry</span>
-        </Link>
+        <div className="flex-1 flex items-end justify-around">
+          <Link href="/recipes" className={linkClass(isRecipes)}>
+            <ChefHat className="h-5 w-5" />
+            <span className="text-[10px] font-medium">Recipes</span>
+          </Link>
+        </div>
       </div>
     </nav>
   );

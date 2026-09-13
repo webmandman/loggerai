@@ -1,5 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { PantryInput, ProcessedLogEntry, QueryResult, ReceiptScan } from "@/types";
+import type {
+  PantryInput,
+  ProcessedLogEntry,
+  QueryResult,
+  ReceiptScan,
+  Recipe,
+} from "@/types";
 import { toLocalDateStr } from "@/lib/utils";
 
 export const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
@@ -474,4 +480,96 @@ export function queryLogsStreaming(
       }
     },
   });
+}
+
+const RECIPE_SCHEMA = {
+  type: "object",
+  properties: {
+    recipes: {
+      type: "array",
+      description: "Between 3 and 5 recipes.",
+      items: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: 'Dish name, e.g. "Lemon Garlic Chicken".' },
+          description: {
+            type: "string",
+            description: "One appetising sentence, max 120 chars.",
+          },
+          minutes: { type: "integer", description: "Total time in minutes, start to plate." },
+          servings: { type: "integer", description: "How many people it feeds." },
+          ingredients: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                item: { type: "string", description: 'Display name, e.g. "Olive Oil".' },
+                amount: {
+                  type: "string",
+                  description: 'Amount needed, e.g. "2 tbsp", "1 lb". Empty string if to taste.',
+                },
+                have: {
+                  type: "boolean",
+                  description:
+                    "True only if this ingredient appears in the pantry list given in the prompt.",
+                },
+              },
+              required: ["item", "amount", "have"],
+              additionalProperties: false,
+            },
+          },
+          steps: {
+            type: "array",
+            items: { type: "string" },
+            description: "Numbered method, one sentence or two per step.",
+          },
+        },
+        required: ["title", "description", "minutes", "servings", "ingredients", "steps"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["recipes"],
+  additionalProperties: false,
+};
+
+/**
+ * Suggest cookable recipes from what the household actually has.
+ *
+ * Structured outputs for the same reason as extractReceipt: a stray token in
+ * the free-text convention above degrades to an empty array, which here would
+ * read as "nothing you can cook" rather than "the parse failed".
+ */
+export async function suggestRecipes(pantry: string[]): Promise<Recipe[]> {
+  const message = await anthropic.messages.create({
+    model: MODEL,
+    // Five full recipes with methods is a lot of tokens; truncation here would
+    // cut the last recipe mid-step. See assertComplete.
+    max_tokens: 16000,
+    output_config: { format: { type: "json_schema", schema: RECIPE_SCHEMA } },
+    messages: [
+      {
+        role: "user",
+        content: `Suggest 3-5 recipes this household can cook from what is in their pantry right now.
+
+Pantry:
+${pantry.map((p) => `- ${p}`).join("\n")}
+
+Rules:
+- Build each recipe around the pantry list. Every recipe must use at least three pantry items as its main components.
+- Assume basic staples are on hand even if unlisted: salt, pepper, water, cooking oil. Mark those "have": true.
+- You may add at most 2 ingredients that are NOT in the pantry, and only cheap common ones. Mark those "have": false. Prefer recipes that need none.
+- Set "have": true only for ingredients that appear in the pantry list above (or are basic staples).
+- Vary the suggestions: different cuisines, different meals of the day, different effort levels.
+- Give a real, complete method — someone who has never made this dish should be able to follow it.`,
+      },
+    ],
+  });
+
+  assertComplete(message, "These recipes");
+  const text = textFrom(message);
+  if (!text) throw new Error("The model returned no recipes. Try again.");
+
+  const parsed = JSON.parse(text) as { recipes?: Recipe[] };
+  return Array.isArray(parsed.recipes) ? parsed.recipes : [];
 }

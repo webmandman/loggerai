@@ -29,6 +29,22 @@ export interface ReceiptScan {
   items: PantryInput[];
 }
 
+export interface RecipeIngredient {
+  item: string;
+  amount: string;
+  /** True when the pantry already has it (or it is a basic staple). */
+  have: boolean;
+}
+
+export interface Recipe {
+  title: string;
+  description: string;
+  minutes: number;
+  servings: number;
+  ingredients: RecipeIngredient[];
+  steps: string[];
+}
+
 export interface ProcessedLogEntry {
   summary: string;
   category: string;
