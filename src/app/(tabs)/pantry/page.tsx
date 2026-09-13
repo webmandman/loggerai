@@ -7,6 +7,7 @@ import {
   Check,
   Circle,
   Loader2,
+  Merge,
   Plus,
   Search,
   ShoppingCart,
@@ -17,8 +18,8 @@ import { api } from "@/lib/api";
 import { downscaleImage } from "@/lib/image";
 import {
   SWIPE_MAX,
-  SWIPE_THRESHOLD,
   shouldDelete,
+  shouldMerge,
   swipeIntent,
   swipeOffset,
 } from "@/lib/swipe";
@@ -39,6 +40,7 @@ export default function PantryPage() {
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [undo, setUndo] = useState<PantryItem | null>(null);
+  const [mergeFrom, setMergeFrom] = useState<PantryItem | null>(null);
   const [newItem, setNewItem] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -65,7 +67,18 @@ export default function PantryPage() {
     [items]
   );
 
-  const active = tab === "needed" ? needed : available;
+  // While merging, show every item regardless of tab: the duplicate you are
+  // folding together is usually split across the two lists, which is exactly
+  // how it went unnoticed.
+  const active = useMemo(
+    () =>
+      mergeFrom
+        ? items.filter((i) => i.id !== mergeFrom.id)
+        : tab === "needed"
+          ? needed
+          : available,
+    [mergeFrom, items, tab, needed, available]
+  );
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -147,6 +160,35 @@ export default function PantryPage() {
       }
     },
     [load]
+  );
+
+  const doMerge = useCallback(
+    async (into: PantryItem) => {
+      const from = mergeFrom;
+      if (!from || from.id === into.id) {
+        setMergeFrom(null);
+        return;
+      }
+      setMergeFrom(null);
+      setUndo(null);
+
+      const res = await api("/api/pantry/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromId: from.id, intoId: into.id }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Could not merge those items");
+        return;
+      }
+
+      const data = await res.json();
+      setFlash(`Merged ${data.merged} into ${data.into}`);
+      load();
+    },
+    [mergeFrom, load]
   );
 
   const undoRemove = useCallback(async () => {
@@ -291,6 +333,28 @@ export default function PantryPage() {
       </div>
 
       <div className="pt-3 space-y-2">
+        {mergeFrom && (
+          <div
+            className={cn(
+              "flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2.5",
+              "animate-in fade-in slide-in-from-top-1 duration-200"
+            )}
+          >
+            <Merge className="h-4 w-4 text-primary shrink-0" />
+            <p className="text-sm flex-1 min-w-0">
+              Tap the item to merge{" "}
+              <span className="font-medium">{mergeFrom.label}</span> into
+            </p>
+            <button
+              onClick={() => setMergeFrom(null)}
+              aria-label="Cancel merge"
+              className="shrink-0 rounded-full p-0.5 opacity-60 hover:opacity-100 transition-opacity"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         {undo && (
           <div
             className={cn(
@@ -371,11 +435,13 @@ export default function PantryPage() {
               <Row
                 key={item.id}
                 item={item}
-                tab={tab}
+                merging={mergeFrom !== null}
                 onToggle={() =>
-                  setStatus(item, tab === "needed" ? "available" : "needed")
+                  setStatus(item, item.status === "needed" ? "available" : "needed")
                 }
                 onRemove={() => remove(item)}
+                onStartMerge={() => setMergeFrom(item)}
+                onPickMergeTarget={() => doMerge(item)}
               />
             ))}
           </ul>
@@ -427,16 +493,20 @@ function TabButton({
 
 function Row({
   item,
-  tab,
+  merging,
   onToggle,
   onRemove,
+  onStartMerge,
+  onPickMergeTarget,
 }: {
   item: PantryItem;
-  tab: Tab;
+  merging: boolean;
   onToggle: () => void;
   onRemove: () => void;
+  onStartMerge: () => void;
+  onPickMergeTarget: () => void;
 }) {
-  const buying = tab === "needed";
+  const buying = item.status === "needed";
   const [dx, setDx] = useState(0);
   const [dragging, setDragging] = useState(false);
   const gesture = useRef<{
@@ -447,9 +517,10 @@ function Row({
   } | null>(null);
 
   const handlePointerDown = (e: React.PointerEvent) => {
-    // Desktop keeps the hover trash button; swiping with a mouse fights
-    // text selection and drag-to-scroll for no benefit.
-    if (e.pointerType === "mouse") return;
+    // Desktop keeps the hover buttons; swiping with a mouse fights text
+    // selection and drag-to-scroll for no benefit. While merging, the whole
+    // row is a target, so gestures would only get in the way.
+    if (e.pointerType === "mouse" || merging) return;
     gesture.current = { x: e.clientX, y: e.clientY, live: true, horizontal: false };
   };
 
@@ -488,9 +559,11 @@ function Row({
     if (shouldDelete(dx)) {
       setDx(-SWIPE_MAX * 3); // slide it off before the parent unmounts it
       onRemove();
-    } else {
-      setDx(0);
+      return;
     }
+
+    setDx(0);
+    if (shouldMerge(dx)) onStartMerge();
   };
 
   return (
@@ -501,17 +574,27 @@ function Row({
       <div
         aria-hidden
         className={cn(
-          "absolute inset-0 flex items-center justify-end pr-5 rounded-xl",
-          "bg-destructive text-white transition-opacity",
-          dx < 0 ? "opacity-100" : "opacity-0"
+          "absolute inset-0 flex items-center rounded-xl text-white transition-opacity",
+          dx < 0 && "justify-end pr-5 bg-destructive",
+          dx > 0 && "justify-start pl-5 bg-primary",
+          dx === 0 && "opacity-0"
         )}
       >
-        <Trash2
-          className={cn(
-            "h-5 w-5 transition-transform",
-            dx <= -SWIPE_THRESHOLD ? "scale-110" : "scale-90"
-          )}
-        />
+        {dx < 0 ? (
+          <Trash2
+            className={cn(
+              "h-5 w-5 transition-transform",
+              shouldDelete(dx) ? "scale-110" : "scale-90"
+            )}
+          />
+        ) : (
+          <Merge
+            className={cn(
+              "h-5 w-5 transition-transform",
+              shouldMerge(dx) ? "scale-110" : "scale-90"
+            )}
+          />
+        )}
       </div>
 
       <div
@@ -523,9 +606,18 @@ function Row({
           transform: `translateX(${dx}px)`,
           transition: dragging ? "none" : "transform 180ms ease-out",
         }}
-        className="group relative flex items-center gap-3 rounded-xl bg-background px-1 py-1 hover:bg-accent/40"
+        onClick={merging ? onPickMergeTarget : undefined}
+        role={merging ? "button" : undefined}
+        aria-label={merging ? `Merge into ${item.label}` : undefined}
+        className={cn(
+          "group relative flex items-center gap-3 rounded-xl bg-background px-1 py-1",
+          merging
+            ? "cursor-pointer ring-1 ring-transparent hover:ring-primary/40 hover:bg-primary/5"
+            : "hover:bg-accent/40"
+        )}
       >
       <button
+        disabled={merging}
         onClick={onToggle}
         aria-label={
           buying ? `Mark ${item.label} as bought` : `Add ${item.label} to shopping list`
@@ -550,14 +642,45 @@ function Row({
 
       <span className="flex-1 min-w-0 text-[15px] truncate">{item.label}</span>
 
-      {item.quantity && (
+      {/* While merging the list spans both tabs, so say which side each is on. */}
+      {merging && (
+        <span
+          className={cn(
+            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
+            buying
+              ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+              : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+          )}
+        >
+          {buying ? "to buy" : "in stock"}
+        </span>
+      )}
+
+      {item.quantity && !merging && (
         <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
           {item.quantity}
         </span>
       )}
 
       <button
+        onClick={onStartMerge}
+        disabled={merging}
+        aria-label={`Merge ${item.label} into another item`}
+        title="Merge into another item"
+        className={cn(
+          "h-9 w-9 shrink-0 rounded-lg items-center justify-center",
+          "text-muted-foreground/40 hover:text-primary hover:bg-primary/10",
+          // Desktop-only: on touch this is the swipe-right gesture, and two
+          // affordances per row would crowd out the label.
+          "hidden sm:flex sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 transition-all"
+        )}
+      >
+        <Merge className="h-4 w-4" />
+      </button>
+
+      <button
         onClick={onRemove}
+        disabled={merging}
         aria-label={`Remove ${item.label}`}
         title="Remove"
         className={cn(

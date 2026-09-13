@@ -22,12 +22,17 @@ export function swipeIntent(deltaX: number, deltaY: number): SwipeIntent {
   return ay >= ax ? "scroll" : "swipe";
 }
 
-/** Follow the finger leftward only, and never past the reveal width. */
+/** Follow the finger either way, but never past the reveal width. */
 export function swipeOffset(deltaX: number): number {
-  return Math.max(-SWIPE_MAX, Math.min(0, deltaX));
+  return Math.max(-SWIPE_MAX, Math.min(SWIPE_MAX, deltaX));
 }
 
 /** Release past the threshold deletes; anything less snaps back. */
 export function shouldDelete(offset: number): boolean {
   return offset <= -SWIPE_THRESHOLD;
+}
+
+/** Right is the non-destructive direction, so it starts a merge. */
+export function shouldMerge(offset: number): boolean {
+  return offset >= SWIPE_THRESHOLD;
 }

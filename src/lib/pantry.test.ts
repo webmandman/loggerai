@@ -6,6 +6,7 @@ import {
   matchKey,
   mergeAliases,
   normalizeItemName,
+  planMerge,
   toPantryRows,
 } from "./normalize.ts";
 
@@ -24,6 +25,22 @@ test("strips receipt cruft: PLU codes, weights, punctuation", () => {
   assert.equal(normalizeItemName("BANANAS ORGANIC 4011"), "banana organic");
   assert.equal(normalizeItemName("Milk, 2%"), "milk");
   assert.equal(normalizeItemName("EGGS  LG  GRADE-A  12CT"), "egg lg grade a ct");
+});
+
+test("camelCase from the model splits into words, not one welded key", () => {
+  // The model occasionally answers "oliveOil"; lowercasing first would make
+  // "oliveoil", which never matches the receipt's "olive oil".
+  assert.equal(normalizeItemName("oliveOil"), "olive oil");
+  assert.equal(normalizeItemName("paperTowels"), "paper towel");
+  assert.equal(normalizeItemName("oliveOil"), normalizeItemName("Olive Oil"));
+  assert.equal(normalizeItemName("greekYogurt"), normalizeItemName("Greek Yogurt"));
+});
+
+test("separators all normalize to the same key", () => {
+  const expected = "green onion";
+  for (const form of ["green onion", "Green-Onion", "green_onion", "greenOnion"]) {
+    assert.equal(normalizeItemName(form), expected, form);
+  }
 });
 
 test("plural forms collapse onto the singular key", () => {
@@ -183,6 +200,38 @@ test("THE LOOP: receipt -> ran out -> receipt lands on the same key each time", 
   assert.equal(fromNextReceipt[0].name, "banana");
   assert.equal(fromMessage[0].status, "needed");
   assert.equal(fromNextReceipt[0].status, "available");
+});
+
+test("merging keeps the target's label and absorbs the source as an alias", () => {
+  const plan = planMerge(
+    { name: "creamer", label: "Creamer", aliases: ["coffee creamer"], quantity: null },
+    { name: "half and half", label: "Half & Half", aliases: [], quantity: "1 qt" }
+  );
+  assert.equal(plan.label, "Half & Half");
+  assert.equal(plan.quantity, "1 qt");
+  assert.deepEqual(plan.aliases, ["coffee creamer", "creamer"]);
+});
+
+test("merging fills in a missing quantity from the source", () => {
+  const plan = planMerge(
+    { name: "creamer", label: "Creamer", aliases: [], quantity: "1 qt" },
+    { name: "half and half", label: "Half & Half", aliases: [], quantity: null }
+  );
+  assert.equal(plan.quantity, "1 qt");
+});
+
+test("a merged duplicate resolves onto the survivor next time", () => {
+  // The reason merge writes the alias at all: the phrasing that caused the
+  // split must stop splitting.
+  const plan = planMerge(
+    { name: "creamer", label: "Creamer", aliases: [], quantity: null },
+    { name: "half and half", label: "Half & Half", aliases: [], quantity: null }
+  );
+  const survivor = { name: "half and half", aliases: plan.aliases };
+  assert.deepEqual(matchKey("creamer", [survivor]), {
+    name: "half and half",
+    via: "alias",
+  });
 });
 
 test("THE LOOP via alias: buy half & half, run out of 'creamer', buy again", () => {

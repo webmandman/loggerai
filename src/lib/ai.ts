@@ -80,7 +80,8 @@ export async function processLogEntry(
     Task/work: project, estimatedHours, priority, blockers
     Food/health: meal, calories, ingredients, symptoms
   Only include keys that are clearly present or inferable from the text. Use null for mentioned-but-unknown values. Return {} if no structured data can be extracted.
-- "consumed": An array of grocery/food items the entry says are now GONE — used up, finished, eaten, expired, or run out. Examples that qualify: "we ran out of bananas", "I just ate the last of the dried mango", "the milk went bad", "finished the coffee". Each element is an object: { "name": singular lowercase key e.g. "banana", "label": natural display name e.g. "Bananas", "aliases": array of other everyday names for the same item, especially ones sharing no words with "name" (e.g. ["creamer"] for half and half) — empty array if none apply }. Return [] unless the entry clearly states the item is depleted — merely eating or mentioning a food ("had eggs for breakfast", "bought apples") does NOT qualify.
+- "consumed": An array of grocery/food items the entry says are now GONE — used up, finished, eaten, expired, or run out. Examples that qualify: "we ran out of bananas", "I just ate the last of the dried mango", "the milk went bad", "finished the coffee". Each element is an object: { "name": singular lowercase key e.g. "banana", "label": natural display name e.g. "Bananas", "aliases": array of other everyday names for the same item, especially ones sharing no words with "name" (e.g. ["creamer"] for half and half) — empty array if none apply }. Return [] unless the entry clearly states the item is depleted — merely eating or mentioning a food ("had eggs for breakfast") does NOT qualify.
+- "stocked": An array of grocery/food items the entry says the household HAS or just acquired. This covers inventory dictation as well as purchases, and a single entry may list many items — extract every one. Examples that qualify: "in the fridge we have milk, eggs, spinach and two lemons", "I bought apples and rice", "we still have plenty of olive oil", "stocked up on pasta". Each element is an object: { "name": singular lowercase key e.g. "lemon", "label": natural display name e.g. "Lemons", "quantity": the amount as stated e.g. "2" or null, "aliases": array of other everyday names for the same item — empty array if none apply }. Return [] if the entry does not say anything is on hand. An item that the entry says is gone belongs in "consumed", never here.
 
 Return ONLY valid JSON, no markdown formatting or code blocks.
 
@@ -112,6 +113,7 @@ ${rawInput}
           : {},
       occurredAt: typeof parsed.occurredAt === "string" ? parsed.occurredAt : null,
       consumed: normalizePantryInputs(parsed.consumed),
+      stocked: normalizePantryInputs(parsed.stocked),
     };
   } catch {
     return {
@@ -123,6 +125,7 @@ ${rawInput}
       metadata: {},
       occurredAt: null,
       consumed: [],
+      stocked: [],
     };
   }
 }

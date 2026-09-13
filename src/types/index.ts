@@ -39,6 +39,8 @@ export interface ProcessedLogEntry {
   occurredAt: string | null;
   /** Food the entry says is now gone — gets pushed onto the shopping list. */
   consumed: PantryInput[];
+  /** Food the entry says is on hand — gets stocked into the pantry. */
+  stocked: PantryInput[];
 }
 
 export interface LogEntry {

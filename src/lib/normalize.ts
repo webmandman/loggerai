@@ -12,6 +12,10 @@
  */
 export function normalizeItemName(raw: string): string {
   const cleaned = raw
+    // Split camelCase BEFORE lowercasing. The model sometimes answers
+    // "oliveOil" instead of "olive oil", and lowercasing first would weld it
+    // into "oliveoil" — a key that never matches the receipt's "olive oil".
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .toLowerCase()
     .replace(/[^a-z\s]/g, " ") // drop digits, punctuation, PLU codes
     .replace(/\s+/g, " ")
@@ -121,6 +125,31 @@ export function mergeAliases(
     }
   }
   return [...out].sort();
+}
+
+export interface MergeSide {
+  name: string;
+  label: string;
+  aliases: string[];
+  quantity: string | null;
+}
+
+/**
+ * Work out what the surviving row looks like when two duplicates are merged.
+ *
+ * The target wins on the things a person can see — label and status — because
+ * the person picked it; predictable beats clever when you are merging by hand.
+ * The source contributes its name and aliases, which is the whole point: the
+ * phrasing that produced the duplicate becomes an alias, so the same wording
+ * resolves correctly next time instead of splitting again.
+ */
+export function planMerge(from: MergeSide, into: MergeSide) {
+  return {
+    aliases: mergeAliases(into.name, into.aliases, from.aliases, [from.name]),
+    // Keep whatever quantity we actually know; the target's reading wins.
+    quantity: into.quantity ?? from.quantity ?? null,
+    label: into.label,
+  };
 }
 
 function singularize(word: string): string {

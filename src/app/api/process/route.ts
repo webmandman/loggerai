@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-guard";
 import { classifyIntent, processLogEntry } from "@/lib/ai";
-import { markNeeded } from "@/lib/pantry";
+import { markAvailable, markNeeded } from "@/lib/pantry";
 import { normalizeActionItems, parseLocalDate } from "@/lib/utils";
 
 export async function POST(request: NextRequest) {
@@ -93,15 +93,19 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  // "We ran out of bananas" -> bananas land on the shopping list.
+  // "In the fridge we have milk and eggs" -> stocked. "We ran out of bananas"
+  // -> shopping list. Stocked runs first so that if one message says both, the
+  // depleted item ends up needed rather than silently back in stock.
   // ponytail: this route and /api/logs POST are near-duplicate write paths;
-  // both need this call. Merge them if a third write path ever appears.
+  // both need these calls. Merge them if a third write path ever appears.
+  const stocked = await markAvailable(processed.stocked, "message");
   const needed = await markNeeded(processed.consumed);
 
   return NextResponse.json(
     {
       type: "log",
       addedToShoppingList: needed.map((i) => i.label),
+      addedToPantry: stocked.map((i) => i.label),
       entry: {
         ...entry,
         tags: JSON.parse(entry.tags),

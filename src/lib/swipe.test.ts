@@ -6,6 +6,7 @@ import {
   SWIPE_MAX,
   SWIPE_THRESHOLD,
   shouldDelete,
+  shouldMerge,
   swipeIntent,
   swipeOffset,
 } from "./swipe.ts";
@@ -34,25 +35,41 @@ test("a diagonal tie goes to scrolling, not swiping", () => {
   assert.equal(swipeIntent(-31, 30), "swipe");
 });
 
-test("the row follows the finger leftward only", () => {
+test("the row follows the finger in both directions", () => {
   assert.equal(swipeOffset(-50), -50);
   assert.equal(swipeOffset(0), 0);
-  // Dragging right must not slide the row off the other way.
-  assert.equal(swipeOffset(80), 0);
+  assert.equal(swipeOffset(50), 50);
 });
 
 test("the row stops following past the reveal width", () => {
   assert.equal(swipeOffset(-1000), -SWIPE_MAX);
+  assert.equal(swipeOffset(1000), SWIPE_MAX);
 });
 
-test("release deletes only past the threshold", () => {
+test("release deletes only past the left threshold", () => {
   assert.equal(shouldDelete(-SWIPE_THRESHOLD), true);
   assert.equal(shouldDelete(-SWIPE_THRESHOLD - 1), true);
   assert.equal(shouldDelete(-SWIPE_THRESHOLD + 1), false);
   assert.equal(shouldDelete(0), false);
 });
 
-test("a full drag always reaches the delete threshold", () => {
-  // A capped offset that could not trigger a delete would be unusable.
+test("release merges only past the right threshold", () => {
+  assert.equal(shouldMerge(SWIPE_THRESHOLD), true);
+  assert.equal(shouldMerge(SWIPE_THRESHOLD - 1), false);
+  assert.equal(shouldMerge(0), false);
+});
+
+test("the two directions never both fire", () => {
+  // Destructive delete must not be reachable by a rightward swipe.
+  for (const offset of [-SWIPE_MAX, -SWIPE_THRESHOLD, -1, 0, 1, SWIPE_THRESHOLD, SWIPE_MAX]) {
+    assert.equal(shouldDelete(offset) && shouldMerge(offset), false);
+  }
+  assert.equal(shouldDelete(SWIPE_MAX), false);
+  assert.equal(shouldMerge(-SWIPE_MAX), false);
+});
+
+test("a full drag always reaches the threshold in either direction", () => {
+  // A capped offset that could not trigger its action would be unusable.
   assert.equal(shouldDelete(swipeOffset(-9999)), true);
+  assert.equal(shouldMerge(swipeOffset(9999)), true);
 });

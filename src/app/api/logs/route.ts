@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-guard";
 import { processLogEntry } from "@/lib/ai";
-import { markNeeded } from "@/lib/pantry";
+import { markAvailable, markNeeded } from "@/lib/pantry";
 import { normalizeActionItems, parseLocalDate } from "@/lib/utils";
 
 export async function GET(request: NextRequest) {
@@ -122,14 +122,16 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  // Same pantry side effect as /api/process — this path skips intent
+  // Same pantry side effects as /api/process — this path skips intent
   // classification but writes the same entry, so it must stay in step.
+  const stocked = await markAvailable(processed.stocked, "message");
   const needed = await markNeeded(processed.consumed);
 
   return NextResponse.json(
     {
       ...entry,
       addedToShoppingList: needed.map((i) => i.label),
+      addedToPantry: stocked.map((i) => i.label),
       tags: JSON.parse(entry.tags),
       actionItems: normalizeActionItems(JSON.parse(entry.actionItems)),
       metadata: JSON.parse(entry.metadata || "{}"),
