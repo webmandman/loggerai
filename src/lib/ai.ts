@@ -17,6 +17,23 @@ const anthropic = new Anthropic({
  * how entries end up categorised "note" with no tags. Models also like to wrap
  * JSON in ```json fences even when told not to, so strip those here too.
  */
+/**
+ * Fail loudly when the model ran out of room.
+ *
+ * A truncated response is cut mid-JSON, so JSON.parse throws and the callers
+ * below fall into a catch that returns an empty result. That looks like "the
+ * model found nothing" when it actually found plenty and got cut off — which
+ * is how a dictated 17-item fridge list silently became an untagged note.
+ * Anything parsing structured output must call this first.
+ */
+function assertComplete(message: Anthropic.Message, what: string): void {
+  if (message.stop_reason === "max_tokens") {
+    throw new Error(
+      `${what} was cut off because it was too long. Try splitting it into two entries.`
+    );
+  }
+}
+
 export function textFrom(message: Anthropic.Message): string {
   const block = message.content.find((b) => b.type === "text");
   const raw = block && block.type === "text" ? block.text.trim() : "";
@@ -30,7 +47,9 @@ export async function classifyIntent(
 ): Promise<"log" | "query" | "reject"> {
   const message = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 16,
+    // One word of answer, but leave room for a thinking block so the text
+    // block is never squeezed out entirely.
+    max_tokens: 64,
     messages: [
       {
         role: "user",
@@ -62,7 +81,11 @@ export async function processLogEntry(
 ): Promise<ProcessedLogEntry> {
   const message = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 1024,
+    // A dictated inventory can run to dozens of items, each with a label,
+    // quantity and alias list. The old 1024 cap truncated those mid-JSON and
+    // the parse failure below quietly turned the whole entry into an empty
+    // note. max_tokens is a ceiling, not a target — unused headroom is free.
+    max_tokens: 16000,
     messages: [
       {
         role: "user",
@@ -80,8 +103,8 @@ export async function processLogEntry(
     Task/work: project, estimatedHours, priority, blockers
     Food/health: meal, calories, ingredients, symptoms
   Only include keys that are clearly present or inferable from the text. Use null for mentioned-but-unknown values. Return {} if no structured data can be extracted.
-- "consumed": An array of grocery/food items the entry says are now GONE — used up, finished, eaten, expired, or run out. Examples that qualify: "we ran out of bananas", "I just ate the last of the dried mango", "the milk went bad", "finished the coffee". Each element is an object: { "name": singular lowercase key e.g. "banana", "label": natural display name e.g. "Bananas", "aliases": array of other everyday names for the same item, especially ones sharing no words with "name" (e.g. ["creamer"] for half and half) — empty array if none apply }. Return [] unless the entry clearly states the item is depleted — merely eating or mentioning a food ("had eggs for breakfast") does NOT qualify.
-- "stocked": An array of grocery/food items the entry says the household HAS or just acquired. This covers inventory dictation as well as purchases, and a single entry may list many items — extract every one. Examples that qualify: "in the fridge we have milk, eggs, spinach and two lemons", "I bought apples and rice", "we still have plenty of olive oil", "stocked up on pasta". Each element is an object: { "name": singular lowercase key e.g. "lemon", "label": natural display name e.g. "Lemons", "quantity": the amount as stated e.g. "2" or null, "aliases": array of other everyday names for the same item — empty array if none apply }. Return [] if the entry does not say anything is on hand. An item that the entry says is gone belongs in "consumed", never here.
+- "consumed": An array of grocery/food items the entry says are now GONE — used up, finished, eaten, expired, or run out. Examples that qualify: "we ran out of bananas", "I just ate the last of the dried mango", "the milk went bad", "finished the coffee". Each element is an object: { "name": the item's everyday name, lowercase and singular, WITH SPACES BETWEEN WORDS — "sour cream", not "sourcream"/"sour_cream"/"sourCream", "label": natural display name e.g. "Bananas", "aliases": array of other everyday names for the same item, especially ones sharing no words with "name" (e.g. ["creamer"] for half and half) — empty array if none apply }. Return [] unless the entry clearly states the item is depleted — merely eating or mentioning a food ("had eggs for breakfast") does NOT qualify.
+- "stocked": An array of grocery/food items the entry says the household HAS or just acquired. This covers inventory dictation as well as purchases, and a single entry may list many items — extract every one. Examples that qualify: "in the fridge we have milk, eggs, spinach and two lemons", "I bought apples and rice", "we still have plenty of olive oil", "stocked up on pasta". Each element is an object: { "name": the item's everyday name, lowercase and singular, WITH SPACES BETWEEN WORDS — "orange juice", not "orangejuice"/"orange_juice"/"orangeJuice", "label": natural display name e.g. "Lemons", "quantity": the amount as stated e.g. "2" or null, "aliases": array of other everyday names for the same item — empty array if none apply }. Return [] if the entry does not say anything is on hand. An item that the entry says is gone belongs in "consumed", never here.
 
 Return ONLY valid JSON, no markdown formatting or code blocks.
 
@@ -93,6 +116,7 @@ ${rawInput}
     ],
   });
 
+  assertComplete(message, "That entry");
   const text = textFrom(message);
 
   try {
@@ -177,7 +201,8 @@ const RECEIPT_SCHEMA = {
         properties: {
           name: {
             type: "string",
-            description: 'Singular lowercase brand-free key, e.g. "banana".',
+            description:
+              'Singular lowercase brand-free key with spaces between words, e.g. "banana", "sour cream". Never "sourcream", "sour_cream" or "sourCream".',
           },
           label: {
             type: "string",
@@ -211,7 +236,7 @@ Receipt lines are abbreviated and noisy. Turn each into the everyday food name a
 - "CHKN BRST BNLS" -> name "chicken breast", label "Chicken Breast"
 
 Rules:
-- "name" is a singular, lowercase, brand-free key used to match this item across receipts and everyday speech. Strip brands, sizes, PLU codes and abbreviations.
+- "name" is a singular, lowercase, brand-free key used to match this item across receipts and everyday speech. Strip brands, sizes, PLU codes and abbreviations. Separate words with single spaces — "sour cream", never "sourcream", "sour_cream" or "sourCream".
 - "label" is the friendly display name, title case.
 - "quantity" is copied from the receipt as printed; null when the line shows no count or weight.
 - "aliases" are the other everyday names for the same item, lowercase and singular. Include one only when a household would plausibly say it instead ("creamer" for half and half, "soda" for cola, "cilantro" for coriander). Leave it empty rather than inventing near-misses.
@@ -233,7 +258,9 @@ export async function extractReceipt(
 ): Promise<ReceiptScan> {
   const message = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 4096,
+    // A big shop runs to 60+ lines; truncation here would silently drop the
+    // tail of the receipt. See assertComplete.
+    max_tokens: 16000,
     output_config: { format: { type: "json_schema", schema: RECEIPT_SCHEMA } },
     messages: [
       {
@@ -249,6 +276,7 @@ export async function extractReceipt(
     ],
   });
 
+  assertComplete(message, "This receipt");
   const text = textFrom(message);
   if (!text) {
     throw new Error("The model returned no receipt data. Try a clearer photo.");
@@ -305,7 +333,7 @@ export async function queryLogs(
 
   const message = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 1024,
+    max_tokens: 8192,
     messages: [
       {
         role: "user",
@@ -406,7 +434,7 @@ export function queryLogsStreaming(
       try {
         const stream = anthropic.messages.stream({
           model: MODEL,
-          max_tokens: 1024,
+          max_tokens: 8192,
           messages: [{ role: "user", content: prompt }],
         });
 
