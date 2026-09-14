@@ -1,40 +1,60 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-guard";
-import { suggestRecipes } from "@/lib/ai";
+import { serializeRecipe } from "@/lib/recipes";
+import type { Recipe } from "@/types";
 
-// Five full recipes is a long generation; the 10s serverless default 504s.
-export const maxDuration = 60;
-
+/** Favourites first, then most recently saved. */
 export async function GET() {
   const { error } = await requireAuth();
   if (error) return error;
 
-  const items = await prisma.pantryItem.findMany({
-    where: { status: "available" },
-    select: { label: true, quantity: true },
-    orderBy: { label: "asc" },
+  const rows = await prisma.savedRecipe.findMany({
+    orderBy: [{ favorite: "desc" }, { createdAt: "desc" }],
   });
 
-  if (items.length < 3) {
-    return NextResponse.json(
-      { recipes: [], pantryCount: items.length },
-      { headers: { "Cache-Control": "no-store, max-age=0" } }
-    );
+  return NextResponse.json(
+    { recipes: rows.map(serializeRecipe) },
+    { headers: { "Cache-Control": "no-store, max-age=0" } }
+  );
+}
+
+/**
+ * Keep a suggestion. Upsert on title so saving the same dish twice — easy to
+ * do across two shuffles — updates it instead of littering the list.
+ */
+export async function POST(request: NextRequest) {
+  const { error } = await requireAuth();
+  if (error) return error;
+
+  const body = (await request.json().catch(() => null)) as Recipe | null;
+
+  if (
+    !body ||
+    typeof body.title !== "string" ||
+    !body.title.trim() ||
+    !Array.isArray(body.ingredients) ||
+    !Array.isArray(body.steps)
+  ) {
+    return NextResponse.json({ error: "That is not a recipe" }, { status: 400 });
   }
 
-  try {
-    const recipes = await suggestRecipes(
-      items.map((i) => (i.quantity ? `${i.label} (${i.quantity})` : i.label))
-    );
-    return NextResponse.json(
-      { recipes, pantryCount: items.length },
-      // Always a fresh set: the pantry changes, and a stale answer suggests
-      // cooking with food that has already been eaten.
-      { headers: { "Cache-Control": "no-store, max-age=0" } }
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Could not suggest recipes";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+  const data = {
+    title: body.title.trim(),
+    description: typeof body.description === "string" ? body.description : "",
+    minutes: Number.isFinite(body.minutes) ? Math.round(body.minutes) : 0,
+    servings: Number.isFinite(body.servings) ? Math.round(body.servings) : 0,
+    ingredients: JSON.stringify(body.ingredients),
+    steps: JSON.stringify(body.steps),
+  };
+
+  const row = await prisma.savedRecipe.upsert({
+    where: { title: data.title },
+    create: data,
+    // `favorite` is deliberately absent: re-saving a dish must not clear a
+    // star someone already put on it.
+    update: data,
+  });
+
+  return NextResponse.json(serializeRecipe(row), { status: 201 });
 }

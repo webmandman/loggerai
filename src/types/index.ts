@@ -36,6 +36,34 @@ export interface RecipeIngredient {
   have: boolean;
 }
 
+export type Meal = "breakfast" | "lunch" | "dinner";
+
+export interface RecipeOptions {
+  meal: Meal;
+  /** How many people to cook for, 1-5. */
+  servings: number;
+  /** How many non-pantry ingredients a suggestion may call for, 1-3. */
+  allowedMissing: number;
+  lactoseFree: boolean;
+  glutenFree: boolean;
+  carbHeavy: boolean;
+  proteinHeavy: boolean;
+}
+
+/** What the options panel starts on before the cook touches anything. */
+export function defaultRecipeOptions(now = new Date()): RecipeOptions {
+  const h = now.getHours();
+  return {
+    meal: h < 11 ? "breakfast" : h < 16 ? "lunch" : "dinner",
+    servings: 5,
+    allowedMissing: 2,
+    lactoseFree: false,
+    glutenFree: false,
+    carbHeavy: false,
+    proteinHeavy: false,
+  };
+}
+
 export interface Recipe {
   title: string;
   description: string;
@@ -43,6 +71,13 @@ export interface Recipe {
   servings: number;
   ingredients: RecipeIngredient[];
   steps: string[];
+}
+
+/** A recipe once it is in the database, i.e. kept rather than just suggested. */
+export interface SavedRecipe extends Recipe {
+  id: string;
+  favorite: boolean;
+  createdAt: string;
 }
 
 export interface ProcessedLogEntry {

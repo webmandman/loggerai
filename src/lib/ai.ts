@@ -5,8 +5,10 @@ import type {
   QueryResult,
   ReceiptScan,
   Recipe,
+  RecipeOptions,
 } from "@/types";
 import { toLocalDateStr } from "@/lib/utils";
+import { filterByDiet } from "@/lib/diet";
 
 export const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 
@@ -533,14 +535,54 @@ const RECIPE_SCHEMA = {
   additionalProperties: false,
 };
 
+/** The diet toggles, as prompt lines. Off toggles say nothing at all. */
+function dietRules(o: RecipeOptions): string[] {
+  const rules: string[] = [];
+  if (o.lactoseFree)
+    rules.push(
+      "- LACTOSE FREE: no milk, cream, butter, cheese of any kind, yoghurt or ghee, and nothing containing them. A lactose-free or plant-based version of one of those is fine, but name it as such."
+    );
+  if (o.glutenFree)
+    rules.push(
+      "- GLUTEN FREE: no wheat, barley or rye, so no regular pasta, bread, breadcrumbs, flour, couscous or soy sauce. A gluten-free version is fine, but name it as such."
+    );
+  if (o.carbHeavy)
+    rules.push(
+      "- CARB HEAVY: build each dish on a substantial starch — rice, pasta, potatoes, bread or grains — as the bulk of the plate."
+    );
+  if (o.proteinHeavy)
+    rules.push(
+      "- PROTEIN HEAVY: make protein the centre of each dish, aiming for roughly 35g or more per serving."
+    );
+  return rules;
+}
+
 /**
  * Suggest cookable recipes from what the household actually has.
  *
  * Structured outputs for the same reason as extractReceipt: a stray token in
  * the free-text convention above degrades to an empty array, which here would
  * read as "nothing you can cook" rather than "the parse failed".
+ *
+ * The dietary constraints lead the prompt rather than sitting in the rule
+ * list. Buried among the other rules the model treated them as preferences
+ * and returned a cheddar frittata for a lactose-free request.
  */
-export async function suggestRecipes(pantry: string[]): Promise<Recipe[]> {
+export async function suggestRecipes(
+  pantry: string[],
+  options: RecipeOptions
+): Promise<Recipe[]> {
+  const diet = dietRules(options);
+
+  const constraints = diet.length
+    ? `HARD CONSTRAINTS. A recipe that breaks any of these is unusable, so it must not appear in your answer:
+${diet.join("\n")}
+
+Some pantry items below will be off-limits under these constraints. Leave them out and cook around them. Before you answer, re-read every ingredient of every recipe against the constraints and drop any recipe that breaks one — returning two safe recipes beats returning five with one bad.
+
+`
+    : "";
+
   const message = await anthropic.messages.create({
     model: MODEL,
     // Five full recipes with methods is a lot of tokens; truncation here would
@@ -550,17 +592,18 @@ export async function suggestRecipes(pantry: string[]): Promise<Recipe[]> {
     messages: [
       {
         role: "user",
-        content: `Suggest 3-5 recipes this household can cook from what is in their pantry right now.
+        content: `Suggest 3-5 ${options.meal} recipes this household can cook from what is in their pantry right now.
 
-Pantry:
+${constraints}Pantry:
 ${pantry.map((p) => `- ${p}`).join("\n")}
 
 Rules:
+- Every recipe must be a ${options.meal} dish, scaled to serve exactly ${options.servings}. Set "servings" to ${options.servings} and size the ingredient amounts to match.
 - Build each recipe around the pantry list. Every recipe must use at least three pantry items as its main components.
 - Assume basic staples are on hand even if unlisted: salt, pepper, water, cooking oil. Mark those "have": true.
-- You may add at most 2 ingredients that are NOT in the pantry, and only cheap common ones. Mark those "have": false. Prefer recipes that need none.
+- You may add at most ${options.allowedMissing} ingredient${options.allowedMissing === 1 ? "" : "s"} that ${options.allowedMissing === 1 ? "is" : "are"} NOT in the pantry, and only cheap common ones. Mark those "have": false. Prefer recipes that need none.
 - Set "have": true only for ingredients that appear in the pantry list above (or are basic staples).
-- Vary the suggestions: different cuisines, different meals of the day, different effort levels.
+- Vary the suggestions: different cuisines, different effort levels.
 - Give a real, complete method — someone who has never made this dish should be able to follow it.`,
       },
     ],
@@ -571,5 +614,5 @@ Rules:
   if (!text) throw new Error("The model returned no recipes. Try again.");
 
   const parsed = JSON.parse(text) as { recipes?: Recipe[] };
-  return Array.isArray(parsed.recipes) ? parsed.recipes : [];
+  return filterByDiet(Array.isArray(parsed.recipes) ? parsed.recipes : [], options);
 }

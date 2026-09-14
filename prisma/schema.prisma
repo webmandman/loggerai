@@ -90,3 +90,22 @@ model LogEntry {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+/// A recipe the household kept. Shared, not per-user, for the same reason the
+/// pantry is: it is generated from shared stock and cooked by whoever is in.
+/// `title` is unique so saving the same suggestion twice is an upsert rather
+/// than a duplicate row — the model reliably repeats a dish under one name.
+model SavedRecipe {
+  id          String   @id @default(cuid())
+  title       String   @unique
+  description String
+  minutes     Int
+  servings    Int
+  ingredients String // JSON array of { item, amount, have }
+  steps       String // JSON array of strings
+  favorite    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([favorite])
+}
