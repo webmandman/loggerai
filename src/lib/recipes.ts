@@ -1,6 +1,5 @@
 // Relative imports on purpose, same as pantry.test.ts relies on: the "@/"
 // alias does not resolve under the bare `node --test` run.
-import { filterByDiet } from "./diet.ts";
 import { matchKey, normalizeItemName, type ExistingItem } from "./normalize.ts";
 import { MEAL_SLOTS, daysBetween, shiftDateStr } from "./plan.ts";
 import type { Meal, Recipe, RecipeOptions, SavedRecipe } from "@/types";
@@ -93,6 +92,12 @@ export function withPantryFlags<T extends Recipe>(recipe: T, pantry: ExistingIte
  * in stock before the missing-ingredient bar is applied. The rows arrive
  * favourites-first from the query, and that order is what survives here.
  *
+ * Diet is NOT decided here. It used to be, via filterByDiet, but that pass
+ * dropped safe dishes on a word match (rice noodles read as "noodle") without
+ * catching the unsafe ones it was there for. The caller runs `screenDiet` over
+ * the result instead — see the header of diet-check.ts for the measurement.
+ * This stays pure and synchronous so the node --test suite can import it.
+ *
  * ponytail: no meal filter — nothing on a saved row says breakfast or dinner,
  * so a kept pancake can show up under dinner. Add a `meal` column and pass it
  * through the save if that starts to grate.
@@ -103,9 +108,8 @@ export function matchFromSaved(
   options: RecipeOptions,
   limit: number
 ): SavedRecipe[] {
-  const fresh = saved.map((r) => withPantryFlags(r, pantry));
-
-  return filterByDiet(fresh, options)
+  return saved
+    .map((r) => withPantryFlags(r, pantry))
     .filter(
       (r) => r.ingredients.filter((i) => !i.have).length <= options.allowedMissing
     )

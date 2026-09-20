@@ -61,13 +61,17 @@ test("word-subset matching counts greek yogurt as yogurt", () => {
   assert.deepEqual(out.map((r) => r.title), ["Raita"]);
 });
 
-test("diet toggles still apply to saved recipes", () => {
+test("diet is left to the caller's screening, not decided here", () => {
+  // Was the opposite assertion, back when this ran filterByDiet. The word list
+  // kept the unsafe dishes it was there for and dropped safe ones on a bare
+  // word match, so screening moved wholesale to screenDiet — which the suggest
+  // route runs over this result. Anything dropped here would never reach it.
   const creamy = saved("Creamy Chicken Rice", ["Rice", "Chicken Breast", "Cream"]);
   const out = matchFromSaved([creamy, friedRice], PANTRY, {
     ...OPTIONS,
     lactoseFree: true,
   }, 5);
-  assert.deepEqual(out.map((r) => r.title), ["Chicken Fried Rice"]);
+  assert.deepEqual(out.map((r) => r.title), ["Creamy Chicken Rice", "Chicken Fried Rice"]);
 });
 
 test("the limit caps how many slots kept recipes take", () => {

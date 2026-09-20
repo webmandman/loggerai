@@ -12,7 +12,8 @@
     "test:swipe": "node --test src/lib/swipe.test.ts",
     "postinstall": "prisma generate",
     "test:diet": "node --test src/lib/diet.test.ts",
-    "test:recipes": "node --test src/lib/recipes.test.ts"
+    "test:recipes": "node --test src/lib/recipes.test.ts",
+    "test:diet-check": "node --test src/lib/diet-check.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -20,6 +21,7 @@
     "@neondatabase/serverless": "^1.0.2",
     "@prisma/adapter-neon": "^7.7.0",
     "@prisma/client": "^7.4.2",
+    "@typesafe-ai/sdk": "^0.6.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dotenv": "^17.3.1",

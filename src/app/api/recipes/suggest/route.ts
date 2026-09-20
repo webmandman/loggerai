@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-guard";
 import { suggestRecipes } from "@/lib/ai";
 import { matchFromSaved, serializeRecipe } from "@/lib/recipes";
+import { screenDiet } from "@/lib/diet-check";
 import { PREFERENCES_KEY } from "@/lib/preferences";
 import { defaultRecipeOptions, type Meal, type RecipeOptions } from "@/types";
 
@@ -107,7 +108,13 @@ async function keptMatches(items: PantryRow[], options: RecipeOptions) {
     aliases: parseAliases(i.aliases),
   }));
 
-  return matchFromSaved(rows.map(serializeRecipe), pantry, options, WANTED);
+  // Screened as well as filtered: a kept recipe was saved before the cook
+  // switched a restriction on, so it gets the same pass a fresh suggestion
+  // gets. Dropping one here just leaves a slot for generation to fill.
+  return screenDiet(
+    matchFromSaved(rows.map(serializeRecipe), pantry, options, WANTED),
+    options
+  );
 }
 
 /** Aliases are a JSON text column; a malformed one is just no aliases. */

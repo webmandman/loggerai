@@ -8,7 +8,7 @@ import type {
   RecipeOptions,
 } from "@/types";
 import { toLocalDateStr } from "@/lib/utils";
-import { filterByDiet } from "@/lib/diet";
+import { screenDiet } from "@/lib/diet-check";
 import { parseDictatedRecipe, type DictatedRecipe } from "@/lib/recipes";
 
 export const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
@@ -641,7 +641,7 @@ Rules:
   if (!text) throw new Error("The model returned no recipes. Try again.");
 
   const parsed = JSON.parse(text) as { recipes?: Recipe[] };
-  return filterByDiet(Array.isArray(parsed.recipes) ? parsed.recipes : [], options);
+  return screenDiet(Array.isArray(parsed.recipes) ? parsed.recipes : [], options);
 }
 
 const DICTATION_SCHEMA = {
