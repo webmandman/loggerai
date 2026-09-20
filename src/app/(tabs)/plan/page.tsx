@@ -12,7 +12,9 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, writeSeq } from "@/lib/api";
+import { isStale } from "@/lib/live";
+import { useLive } from "@/lib/use-live";
 import { cn, toLocalDateStr } from "@/lib/utils";
 import { dayLabel, MEAL_SLOTS, shiftDateStr } from "@/lib/plan";
 import { swipeIntent, SWIPE_MAX, swipeOffset, SWIPE_THRESHOLD } from "@/lib/swipe";
@@ -36,25 +38,42 @@ export default function PlanPage() {
     setDate(key);
   }, []);
 
-  const load = useCallback(async (key: string) => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (key: string, background = false) => {
+    const seq = writeSeq();
+    if (!background) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const res = await api(`/api/plan?date=${key}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not load that day");
+      // See the pantry: a write that started mid-read outranks this response.
+      if (background && isStale(seq, writeSeq())) return;
       setPlan(data.plan);
     } catch (err) {
+      // A failed background refresh leaves the day as it was rather than
+      // blanking a plan someone is cooking from.
+      if (background) return;
       setPlan(EMPTY);
       setError(err instanceof Error ? err.message : "Could not load that day");
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (date) load(date);
   }, [date, load]);
+
+  // Whoever plans dinner is rarely the only one looking at it.
+  const refresh = useCallback(
+    (background: boolean) => {
+      if (date) load(date, background);
+    },
+    [date, load]
+  );
+  useLive(refresh);
 
   const go = useCallback((days: number) => {
     setDate((prev) => (prev ? shiftDateStr(prev, days) : prev));

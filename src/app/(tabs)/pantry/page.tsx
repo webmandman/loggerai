@@ -14,7 +14,9 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, writeSeq } from "@/lib/api";
+import { isStale } from "@/lib/live";
+import { useLive } from "@/lib/use-live";
 import { downscaleImage } from "@/lib/image";
 import {
   SWIPE_MAX,
@@ -44,22 +46,35 @@ export default function PantryPage() {
   const [newItem, setNewItem] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (background = false) => {
+    const seq = writeSeq();
     try {
       const res = await api("/api/pantry");
       if (!res.ok) throw new Error("Could not load your pantry");
       const data = await res.json();
+      // A write started while this read was out, so it knows something this
+      // response does not. Applying it would put a just-deleted row back.
+      if (background && isStale(seq, writeSeq())) return;
       setItems([...data.needed, ...data.available]);
     } catch (err) {
+      // Background failures stay silent: this app gets used in a shop, where
+      // signal drops constantly, and an error banner over the list every time
+      // it does is worse than showing slightly older items.
+      if (background) return;
       setError(err instanceof Error ? err.message : "Could not load your pantry");
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Someone else is usually holding the other half of this list — a partner at
+  // home auditing shelves while you are at the shop. Merging is paused because
+  // it is a two-tap gesture with a half-finished selection on screen.
+  useLive(load, mergeFrom !== null);
 
   const needed = useMemo(() => items.filter((i) => i.status === "needed"), [items]);
   const available = useMemo(
