@@ -89,6 +89,17 @@ export interface SavedRecipe extends Recipe {
 /** What is planned for one day: a recipe per day part, or null for none. */
 export type DayPlan = Record<Meal, SavedRecipe | null>;
 
+/** Someone else who is in the app right now. */
+export interface PresenceUser {
+  userId: string;
+  name: string | null;
+  image: string | null;
+  /** Route they are on, used to describe them when `activity` is null. */
+  path: string;
+  activity: string | null;
+  lastSeen: string;
+}
+
 export interface ProcessedLogEntry {
   summary: string;
   category: string;

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { api, writeSeq } from "@/lib/api";
 import { isStale } from "@/lib/live";
+import { setActivity } from "@/lib/presence";
 import { useLive } from "@/lib/use-live";
 import { downscaleImage } from "@/lib/image";
 import {
@@ -114,6 +115,9 @@ export default function PantryPage() {
       setError(null);
       setFlash(null);
       setScanning(true);
+      // Long enough that someone else will see the note and know not to add
+      // the same shopping to the list twice.
+      setActivity("scanning a receipt");
 
       try {
         const formData = new FormData();
@@ -134,6 +138,7 @@ export default function PantryPage() {
         setError(err instanceof Error ? err.message : "Receipt scan failed");
       } finally {
         setScanning(false);
+        setActivity(null);
       }
     },
     [load]

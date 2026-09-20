@@ -23,6 +23,7 @@ import {
 import { api } from "@/lib/api";
 import { cn, toLocalDateStr } from "@/lib/utils";
 import { dayLabel, MEAL_SLOTS, shiftDateStr } from "@/lib/plan";
+import { setActivity } from "@/lib/presence";
 import {
   defaultRecipeOptions,
   type DayPlan,
@@ -82,6 +83,9 @@ export default function RecipesPage() {
     setGenerating(true);
     setError(null);
     setOpen(null);
+    // A model call takes long enough that someone watching the header should
+    // be told why nothing is happening yet.
+    setActivity("finding recipes");
 
     try {
       const res = await api("/api/recipes/suggest", {
@@ -99,6 +103,7 @@ export default function RecipesPage() {
       setError(err instanceof Error ? err.message : "Could not suggest recipes");
     } finally {
       setGenerating(false);
+      setActivity(null);
     }
   }, [options]);
 

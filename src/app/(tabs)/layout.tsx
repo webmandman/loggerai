@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { BookOpen } from "lucide-react";
 import { UserMenu } from "@/components/user-menu";
+import { PresenceBar } from "@/components/presence-bar";
 import { BottomNav } from "@/components/bottom-nav";
 import { SpeechProvider } from "@/lib/speech-context";
 
@@ -21,7 +22,10 @@ export default function TabsLayout({
                 <BookOpen className="h-6 w-6 text-primary" />
                 <h1 className="text-xl font-bold tracking-tight">Logger.ai</h1>
               </Link>
-              <UserMenu />
+              <div className="flex items-center gap-3">
+                <PresenceBar />
+                <UserMenu />
+              </div>
             </div>
           </div>
         </header>

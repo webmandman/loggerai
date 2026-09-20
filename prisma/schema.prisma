@@ -16,6 +16,7 @@ model User {
   accounts      Account[]
   sessions      Session[]
   logEntries    LogEntry[]
+  presence      Presence?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -136,5 +137,22 @@ model MealPlan {
 model Setting {
   key       String   @id
   value     String
+  updatedAt DateTime @updatedAt
+}
+
+/// Who is currently in the app, and what they are up to.
+/// One row per user, overwritten by their heartbeat, so the table stays the
+/// size of the household rather than growing with every visit. There is no
+/// cleanup job because nothing is ever stale-deleted: a row older than the
+/// online window simply stops being counted.
+model Presence {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Route they are on, e.g. "/pantry". Used to describe them when there is
+  /// no more specific activity to report.
+  path      String
+  /// A longer-running thing they are doing right now, e.g. "scanning a
+  /// receipt". Null most of the time; `path` covers the rest.
+  activity  String?
   updatedAt DateTime @updatedAt
 }
