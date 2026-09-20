@@ -2,12 +2,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import type {
   PantryInput,
   ProcessedLogEntry,
-  QueryResult,
   ReceiptScan,
   Recipe,
   RecipeOptions,
 } from "@/types";
 import { toLocalDateStr } from "@/lib/utils";
+import { classifyEntry } from "@/lib/classify-entry";
 import { screenDiet } from "@/lib/diet-check";
 import { parseDictatedRecipe, type DictatedRecipe } from "@/lib/recipes";
 import {
@@ -105,7 +105,12 @@ ${input}
 export async function processLogEntry(
   rawInput: string
 ): Promise<ProcessedLogEntry> {
-  const message = await anthropic.messages.create({
+  // Started before the await below, so it is in flight while the generation
+  // runs: neither needs the other's answer, and this one finishes in a
+  // fraction of the time, so it costs nothing on the clock.
+  const classifying = classifyEntry(rawInput);
+
+  const generating = anthropic.messages.create({
     model: MODEL,
     // A dictated inventory can run to dozens of items, each with a label,
     // quantity and alias list. The old 1024 cap truncated those mid-JSON and
@@ -142,6 +147,8 @@ ${rawInput}
     ],
   });
 
+  const [message, classified] = await Promise.all([generating, classifying]);
+
   assertComplete(message, "That entry");
   const text = textFrom(message);
 
@@ -149,14 +156,14 @@ ${rawInput}
     const parsed = JSON.parse(text);
     return {
       summary: parsed.summary || rawInput.slice(0, 100),
-      category: parsed.category || "note",
+      category: classified?.category ?? parsed.category ?? "note",
       tags: Array.isArray(parsed.tags) ? parsed.tags : [],
       actionItems: Array.isArray(parsed.actionItems)
         ? parsed.actionItems.map((item: unknown) =>
             typeof item === "string" ? { text: item, done: false } : item
           )
         : [],
-      mood: parsed.mood || null,
+      mood: classified ? classified.mood : parsed.mood || null,
       metadata:
         parsed.metadata && typeof parsed.metadata === "object" && !Array.isArray(parsed.metadata)
           ? parsed.metadata
@@ -166,12 +173,16 @@ ${rawInput}
       stocked: normalizePantryInputs(parsed.stocked),
     };
   } catch {
+    // The husk, but no longer a blank one. Everything below needed the
+    // generation that just failed to parse; the category and the mood did not,
+    // so the entry lands findable by the feed filter instead of joining the
+    // pile of untagged "note" rows this catch has been producing.
     return {
       summary: rawInput.slice(0, 100),
-      category: "note",
+      category: classified?.category ?? "note",
       tags: [],
       actionItems: [],
-      mood: null,
+      mood: classified?.mood ?? null,
       metadata: {},
       occurredAt: null,
       consumed: [],
@@ -335,70 +346,6 @@ export async function extractReceipt(
     purchasedAt: typeof parsed.purchasedAt === "string" ? parsed.purchasedAt : null,
     items,
   };
-}
-
-export async function queryLogs(
-  question: string,
-  entries: Array<{
-    id: string;
-    rawInput: string;
-    summary: string;
-    category: string;
-    tags: string;
-    actionItems: string;
-    metadata: string;
-    createdAt: Date;
-  }>
-): Promise<QueryResult> {
-  const entriesContext = entries
-    .map(
-      (e) =>
-        `[ID: ${e.id}] (${toLocalDateStr(e.createdAt)}) [${e.category}] ${e.summary} | Metadata: ${e.metadata} | Raw: ${e.rawInput}`
-    )
-    .join("\n");
-
-  const message = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 8192,
-    messages: [
-      {
-        role: "user",
-        content: `You are an AI assistant that ONLY answers questions about the user's personal log entries. Today's date is ${toLocalDateStr()}. You must NEVER use outside knowledge, general information, or data not present in the log entries below. If the question is unrelated to the user's logs or no relevant entries exist, respond with a single short sentence explaining that the question doesn't relate to any information in their logs. Do not add any preamble about what you can or cannot do.
-
-When the user asks about relative dates (e.g. "tomorrow", "this week"), resolve them relative to today's date. Relative words like "tomorrow" in a log entry refer to the day after that entry was created, NOT relative to today.
-
-Log entries:
-"""
-${entriesContext}
-"""
-
-User question: "${question}"
-
-Return a JSON object with:
-- "answer": A natural language answer based ONLY on the log entries above. Do not include any information from outside these entries.
-- "relevantEntryIds": An array of entry IDs (the [ID: ...] values) that are relevant to the question
-
-Return ONLY valid JSON, no markdown formatting or code blocks.`,
-      },
-    ],
-  });
-
-  const text = textFrom(message);
-
-  try {
-    const parsed = JSON.parse(text);
-    return {
-      answer: parsed.answer || "I couldn't find a relevant answer.",
-      relevantEntryIds: Array.isArray(parsed.relevantEntryIds)
-        ? parsed.relevantEntryIds
-        : [],
-    };
-  } catch {
-    return {
-      answer: "I had trouble processing that query. Please try again.",
-      relevantEntryIds: [],
-    };
-  }
 }
 
 function buildQueryPrompt(

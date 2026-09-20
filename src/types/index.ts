@@ -136,11 +136,6 @@ export interface LogEntry {
   } | null;
 }
 
-export interface QueryResult {
-  answer: string;
-  relevantEntryIds: string[];
-}
-
 export type InputMethod = "voice" | "text";
 
 export const CATEGORIES = [

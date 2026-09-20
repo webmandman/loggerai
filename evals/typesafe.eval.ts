@@ -1,8 +1,8 @@
 /**
- * Live evals for the four TypeSafe judgments.
+ * Live evals for the five TypeSafe judgments.
  *
- *   npm run eval              all four
- *   npm run eval -- intent    just one: diet | pantry | intent | attribution
+ *   npm run eval              all five
+ *   npm run eval -- intent    one of: diet | pantry | intent | attribution | entry
  *
  * These call the real API and cost real tokens, which is why they are not in
  * `npm test`. Run them when the model version moves, when a question's wording
@@ -24,7 +24,8 @@ import { classifyInput, type Intent } from "../src/lib/intent.ts";
 import { matchKey } from "../src/lib/normalize.ts";
 import { resolveKeys } from "../src/lib/pantry-match.ts";
 import { attributeEntries } from "../src/lib/query-stream.ts";
-import type { Recipe, RecipeOptions } from "../src/types/index.ts";
+import { classifyEntry, type Mood } from "../src/lib/classify-entry.ts";
+import type { Category, Recipe, RecipeOptions } from "../src/types/index.ts";
 
 interface Row {
   label: string;
@@ -288,6 +289,96 @@ async function attributionEval(): Promise<number> {
   return report("Entry attribution — the fallback when the marker is lost", rows);
 }
 
+// --- entry classification ------------------------------------------------
+
+/**
+ * The two fields lifted off the nine-field generation call. The set leans on
+ * the pairs that are genuinely close — a task against a reminder, an
+ * achievement against a note — because those are where a ballot of eleven
+ * options either holds or does not.
+ */
+const ENTRY_CASES: Array<{ said: string; category: Category; mood: Mood }> = [
+  {
+    said: "need to renew the car registration before it expires",
+    category: "task",
+    mood: "neutral",
+  },
+  {
+    said: "don't let me forget to call the dentist at 9am tomorrow",
+    category: "reminder",
+    mood: "neutral",
+  },
+  // Phrased flat on purpose. The first version was "what if the pantry could
+  // warn us..." and the model called it excited — fairly, "what if" carries a
+  // spark. This case is here to test the `idea` category, so the mood is held
+  // out of the way rather than made the argument.
+  {
+    said: "possible feature: the pantry could warn us before something goes off",
+    category: "idea",
+    mood: "neutral",
+  },
+  {
+    said: "spoke with Sarah and Tom about the Q3 budget, we agreed to cut the travel line",
+    category: "meeting",
+    mood: "neutral",
+  },
+  {
+    said: "finally ran a sub-25 5k this morning, been chasing that all year",
+    category: "achievement",
+    mood: "positive",
+  },
+  {
+    said: "the login redirect drops the query string when the session expires",
+    category: "bug",
+    mood: "neutral",
+  },
+  // Relabelled after the first run. The originals said "not sure whether to
+  // renew the lease" and "mum's birthday lunch on Sunday", labelled anxious and
+  // excited — but neither sentence carries the feeling, I was reading it in,
+  // and the model was right to call both neutral. A mood case has to put the
+  // mood in the words.
+  //
+  // The lease version then came back `personal` rather than `question`, which
+  // is also fair: CATEGORIES overlaps here by construction, since `question`
+  // describes a form and `personal` describes a subject, and a lease decision
+  // is both. Not a taxonomy to redesign from an eval — the feed filter and the
+  // badge colours are built on it — so the case moved out of the overlap.
+  {
+    said: "still can't work out whether to renew the SSL cert before the audit or after, and it's stressing me out",
+    category: "question",
+    mood: "anxious",
+  },
+  {
+    said: "can't wait for mum's birthday lunch on Sunday, everyone is coming",
+    category: "personal",
+    mood: "excited",
+  },
+  { said: "bought milk, eggs and coffee at the shop", category: "grocery", mood: "neutral" },
+  { said: "we ran out of bananas", category: "grocery", mood: "neutral" },
+  {
+    said: "third time this week the build has broken on main and nobody owns it",
+    category: "bug",
+    mood: "frustrated",
+  },
+  {
+    said: "the light in the kitchen is nicer in the afternoon than I realised",
+    category: "note",
+    mood: "positive",
+  },
+];
+
+async function entryEval(): Promise<number> {
+  const results = await Promise.all(ENTRY_CASES.map((c) => classifyEntry(c.said)));
+
+  const rows = ENTRY_CASES.map((c, i) => ({
+    label: c.said,
+    want: `${c.category}/${c.mood}`,
+    got: results[i] ? `${results[i].category}/${results[i].mood}` : "(unavailable)",
+  }));
+
+  return report("Entry classification — category and mood", rows);
+}
+
 // --- runner --------------------------------------------------------------
 
 const EVALS = {
@@ -295,6 +386,7 @@ const EVALS = {
   pantry: pantryEval,
   intent: intentEval,
   attribution: attributionEval,
+  entry: entryEval,
 };
 
 const asked = process.argv.slice(2).filter((a) => a in EVALS) as Array<keyof typeof EVALS>;

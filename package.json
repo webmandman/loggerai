@@ -17,7 +17,8 @@
     "test:pantry-match": "node --test src/lib/pantry-match.test.ts",
     "test:intent": "node --test src/lib/intent.test.ts",
     "eval": "node evals/typesafe.eval.ts",
-    "test:query-stream": "node --test src/lib/query-stream.test.ts"
+    "test:query-stream": "node --test src/lib/query-stream.test.ts",
+    "test:classify-entry": "node --test src/lib/classify-entry.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

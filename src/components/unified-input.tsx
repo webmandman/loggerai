@@ -156,9 +156,6 @@ export function UnifiedInput({
             } catch { /* ignore parse errors in SSE */ }
           }
         }
-      } else if (data.type === "query") {
-        setProcessingPhase("searching");
-        onQueryResult(data.answer, data.entries || []);
       } else if (data.type === "recipe") {
         setProcessingPhase("logging");
         onLog(data.entry);
