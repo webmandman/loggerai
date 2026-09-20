@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as {
     path?: unknown;
     activity?: unknown;
+    idle?: unknown;
   } | null;
 
   const path =
@@ -37,11 +38,12 @@ export async function POST(request: NextRequest) {
   // does not keep an old note alive. Clearing the activity clears the stamp
   // with it, which is what lets the note age out on its own.
   const activityAt = activity ? new Date() : null;
+  const idle = body?.idle === true;
 
   await prisma.presence.upsert({
     where: { userId },
-    create: { userId, path, activity, activityAt },
-    update: { path, activity, activityAt },
+    create: { userId, path, activity, activityAt, idle },
+    update: { path, activity, activityAt, idle },
   });
 
   const since = new Date(Date.now() - ONLINE_WINDOW_MS);
@@ -66,6 +68,7 @@ export async function POST(request: NextRequest) {
     image: row.user.image,
     path: row.path,
     activity: isActivityFresh(row.activityAt?.getTime(), now) ? row.activity : null,
+    idle: row.idle,
     lastSeen: row.updatedAt.toISOString(),
   }));
 

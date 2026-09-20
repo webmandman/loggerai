@@ -159,5 +159,9 @@ model Presence {
   /// Past ACTIVITY_TTL_MS the activity stops being shown, which is what
   /// stops "added peanut butter" hanging under a face all evening.
   activityAt DateTime?
+  /// True when the app is open in front of them but nothing has been touched
+  /// for a while. Not the same as gone: a hidden tab stops sending heartbeats
+  /// altogether and drops off the roster on its own.
+  idle      Boolean  @default(false)
   updatedAt DateTime @updatedAt
 }

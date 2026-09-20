@@ -98,6 +98,8 @@ export interface PresenceUser {
   path: string;
   /** Already filtered server-side: anything past its TTL arrives as null. */
   activity: string | null;
+  /** App open in front of them, but nothing touched for a couple of minutes. */
+  idle: boolean;
   lastSeen: string;
 }
 

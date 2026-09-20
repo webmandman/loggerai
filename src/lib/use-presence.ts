@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { HEARTBEAT_MS, onActivityChange, takeActivity } from "./presence";
+import { HEARTBEAT_MS, isIdle, onActivityChange, takeActivity } from "./presence";
 import type { PresenceUser } from "@/types";
+
+/** Anything that means a person is still there, rather than the page moving. */
+const INTERACTIONS = ["pointerdown", "keydown", "scroll", "touchstart"] as const;
 
 /**
  * Tell the server this person is here, and get back everyone else who is.
@@ -17,6 +20,24 @@ import type { PresenceUser } from "@/types";
 export function usePresence(): PresenceUser[] {
   const pathname = usePathname();
   const [others, setOthers] = useState<PresenceUser[]>([]);
+  // Starts empty rather than at Date.now(): reading the clock during render
+  // is impure, and an unset value already reads as "just arrived".
+  const lastInteraction = useRef<number | null>(null);
+
+  useEffect(() => {
+    const touch = () => {
+      lastInteraction.current = Date.now();
+    };
+    touch();
+
+    // Passive: none of these are cancelled, and a non-passive scroll listener
+    // on window is a needless brake on every scroll in the app.
+    INTERACTIONS.forEach((name) =>
+      window.addEventListener(name, touch, { passive: true })
+    );
+    return () =>
+      INTERACTIONS.forEach((name) => window.removeEventListener(name, touch));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,7 +51,14 @@ export function usePresence(): PresenceUser[] {
         const res = await fetch("/api/presence", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: pathname, activity: takeActivity() }),
+          body: JSON.stringify({
+            path: pathname,
+            activity: takeActivity(),
+            // Judged here, against this device's own clock, for the same
+            // reason activity staleness is judged on the server: both
+            // timestamps have to come from the same place.
+            idle: isIdle(lastInteraction.current, Date.now()),
+          }),
         });
         if (!res.ok) return;
         const data = await res.json();

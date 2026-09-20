@@ -23,9 +23,16 @@ export function PresenceBar() {
 
   return (
     <div className="relative">
-      <div className="flex items-center -space-x-2">
+      {/* Spaced rather than overlapped: the status ring is the point, and
+          overlapping faces would clip the ring off the one behind. */}
+      <div className="flex items-center gap-1.5">
         {others.map((person) => (
-          <Face key={person.userId} name={person.name} image={person.image} />
+          <Face
+            key={person.userId}
+            name={person.name}
+            image={person.image}
+            idle={person.idle}
+          />
         ))}
       </div>
 
@@ -63,20 +70,42 @@ export function PresenceBar() {
   );
 }
 
-function Face({ name, image }: { name: string | null; image: string | null }) {
+function Face({
+  name,
+  image,
+  idle,
+}: {
+  name: string | null;
+  image: string | null;
+  idle: boolean;
+}) {
   const label = firstName(name);
+  // Only two states reach here. Someone whose tab is hidden stops sending
+  // heartbeats and falls off the roster entirely, so "gone" needs no colour —
+  // it is the absence of a face.
+  const status = idle ? "idle" : "active";
 
   return (
     <div
-      title={label}
-      className="h-7 w-7 rounded-full overflow-hidden ring-2 ring-background bg-muted"
+      title={`${label} — ${status}`}
+      aria-label={`${label} is ${status}`}
+      className={cn(
+        "h-7 w-7 rounded-full overflow-hidden bg-muted",
+        "ring-2 ring-offset-2 ring-offset-background transition-colors duration-300",
+        idle ? "ring-amber-400/80" : "ring-emerald-500"
+      )}
     >
       {image ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={image}
-          alt={label}
-          className="h-full w-full object-cover"
+          alt=""
+          className={cn(
+            "h-full w-full object-cover transition-opacity",
+            // Dimmed as well as ringed, so the state is not carried by colour
+            // alone — the ring is unreadable to anyone colourblind on its own.
+            idle && "opacity-60"
+          )}
           referrerPolicy="no-referrer"
         />
       ) : (
@@ -84,8 +113,6 @@ function Face({ name, image }: { name: string | null; image: string | null }) {
           {label.charAt(0)}
         </div>
       )}
-      {/* A green dot would be redundant: being in this list is what "online"
-          means here, since anyone stale has already been filtered out. */}
     </div>
   );
 }

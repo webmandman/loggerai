@@ -5,7 +5,9 @@ import {
   describePath,
   describePresence,
   firstName,
+  IDLE_AFTER_MS,
   isActivityFresh,
+  isIdle,
   isOnline,
   ONLINE_WINDOW_MS,
   reportAction,
@@ -50,6 +52,20 @@ test("an activity with no timestamp is never fresh", () => {
   // A row written before activityAt existed must not claim to be current.
   assert.equal(isActivityFresh(null, 1_000_000), false);
   assert.equal(isActivityFresh(undefined, 1_000_000), false);
+});
+
+test("isIdle needs two quiet minutes", () => {
+  const now = 1_000_000;
+  assert.equal(isIdle(now, now), false);
+  assert.equal(isIdle(now - IDLE_AFTER_MS + 1, now), false);
+  assert.equal(isIdle(now - IDLE_AFTER_MS, now), true);
+});
+
+test("someone who just arrived is active, not idle", () => {
+  // No recorded interaction must not read as "quiet since the epoch".
+  assert.equal(isIdle(null, 1_000_000), false);
+  assert.equal(isIdle(0, 1_000_000), false);
+  assert.equal(isIdle(undefined, 1_000_000), false);
 });
 
 test("isOnline counts three missed beats as gone", () => {

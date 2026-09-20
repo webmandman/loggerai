@@ -45,6 +45,30 @@ export function describePath(path: string): string {
 }
 
 /**
+ * How long without a tap, key or scroll before someone counts as idle.
+ *
+ * Two minutes. Short enough that a phone put down on the counter stops
+ * claiming its owner is shopping; long enough that reading a recipe method
+ * without touching anything does not.
+ */
+export const IDLE_AFTER_MS = 120_000;
+
+/**
+ * Whether someone has gone quiet.
+ *
+ * Measured from their last interaction on their own device, so both times
+ * come from the same clock. No recorded interaction means they have only
+ * just arrived, which is the opposite of idle.
+ */
+export function isIdle(
+  lastInteraction: number | null | undefined,
+  now: number
+): boolean {
+  if (!lastInteraction) return false;
+  return now - lastInteraction >= IDLE_AFTER_MS;
+}
+
+/**
  * Whether an activity is recent enough to still be worth showing.
  *
  * Applied on the server, where `activityAt` and `now` come from the same
