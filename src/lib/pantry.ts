@@ -43,6 +43,21 @@ async function loadExisting(): Promise<
 }
 
 /**
+ * Items actually on hand, as match keys — what a recipe's `have` flags mean.
+ *
+ * Not loadExisting: that one deliberately includes "needed" rows, and counting
+ * a shopping-list entry as in hand would tell the cook they have something they
+ * are out of.
+ */
+export async function availableItems(): Promise<ExistingItem[]> {
+  const rows = await prisma.pantryItem.findMany({
+    where: { status: "available" },
+    select: { name: true, aliases: true },
+  });
+  return rows.map((r) => ({ name: r.name, aliases: parseAliases(r.aliases) }));
+}
+
+/**
  * Write a batch of items, resolving each against what is already in the pantry.
  *
  * `relabel` is the one behavioural difference between the two callers. A

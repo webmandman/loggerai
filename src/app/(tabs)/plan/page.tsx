@@ -15,7 +15,7 @@ import {
 import { api, writeSeq } from "@/lib/api";
 import { isStale } from "@/lib/live";
 import { useLive } from "@/lib/use-live";
-import { cn, toLocalDateStr } from "@/lib/utils";
+import { cn, parseLocalDate, toLocalDateStr } from "@/lib/utils";
 import { dayLabel, MEAL_SLOTS, shiftDateStr } from "@/lib/plan";
 import { swipeIntent, SWIPE_MAX, swipeOffset, SWIPE_THRESHOLD } from "@/lib/swipe";
 import type { DayPlan, Meal, SavedRecipe } from "@/types";
@@ -35,7 +35,11 @@ export default function PlanPage() {
   useEffect(() => {
     const key = toLocalDateStr();
     setToday(key);
-    setDate(key);
+    // "?date=" is how a dictated recipe links to the day it was planned for.
+    // Read straight off window.location rather than useSearchParams, which
+    // would want a Suspense boundary around a prerendered client page.
+    const wanted = new URLSearchParams(window.location.search).get("date");
+    setDate(wanted && parseLocalDate(wanted) ? wanted : key);
   }, []);
 
   const load = useCallback(async (key: string, background = false) => {

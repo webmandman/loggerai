@@ -12,10 +12,12 @@ import {
   BookOpen,
   AlertCircle,
   ShoppingBasket,
+  ChefHat,
 } from "lucide-react";
 import Link from "next/link";
-import { cn } from "@/lib/utils";
+import { cn, toLocalDateStr } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { dayLabel } from "@/lib/plan";
 import { useSpeech } from "@/lib/speech-context";
 import type { LogEntry, InputMethod } from "@/types";
 
@@ -29,6 +31,9 @@ interface UnifiedInputProps {
 
 type ProcessingPhase = null | "classifying" | "logging" | "searching";
 
+/** The green banner under the box: what just happened, and where to go see it. */
+type Note = { text: string; href: string };
+
 export function UnifiedInput({
   onLog,
   onQueryResult,
@@ -40,7 +45,7 @@ export function UnifiedInput({
   const [inputMethod, setInputMethod] = useState<InputMethod>("text");
   const [processingPhase, setProcessingPhase] = useState<ProcessingPhase>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pantryNote, setPantryNote] = useState<string | null>(null);
+  const [note, setNote] = useState<Note | null>(null);
   const [isFocused, setIsFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const holdingRef = useRef(false);
@@ -79,7 +84,7 @@ export function UnifiedInput({
     if (isListening) stopListening();
 
     setError(null);
-    setPantryNote(null);
+    setNote(null);
     setProcessingPhase("classifying");
 
     try {
@@ -154,6 +159,21 @@ export function UnifiedInput({
       } else if (data.type === "query") {
         setProcessingPhase("searching");
         onQueryResult(data.answer, data.entries || []);
+      } else if (data.type === "recipe") {
+        setProcessingPhase("logging");
+        onLog(data.entry);
+
+        // The recipe and the plan row are both invisible from here, so the
+        // banner is the only thing that says which day it landed on.
+        const plan = data.plan as { date: string; meal: string } | null;
+        setNote({
+          text:
+            `${data.updated ? "Updated" : "Saved"} ${data.recipe.title}` +
+            (plan
+              ? ` · ${plan.meal} ${dayLabel(plan.date, toLocalDateStr()).toLowerCase()}`
+              : ""),
+          href: plan ? `/plan?date=${plan.date}` : "/recipes",
+        });
       } else {
         setProcessingPhase("logging");
         onLog(data.entry);
@@ -170,7 +190,7 @@ export function UnifiedInput({
         if (needed.length) {
           parts.push(`${needed.length} added to your shopping list`);
         }
-        setPantryNote(parts.length ? parts.join(" · ") : null);
+        setNote(parts.length ? { text: parts.join(" · "), href: "/pantry" } : null);
       }
 
       setText("");
@@ -270,6 +290,8 @@ export function UnifiedInput({
 
   const phase = processingPhase ? phaseConfig[processingPhase] : null;
 
+  const NoteIcon = note?.href === "/pantry" ? ShoppingBasket : ChefHat;
+
   const recordingLabel = isTouchDevice.current && tapRecording
     ? "Recording — tap to stop"
     : "Recording — release to stop";
@@ -358,7 +380,7 @@ export function UnifiedInput({
             ) : (
               <span className="select-none pl-1 flex items-center gap-1.5">
                 <Sparkles className="h-3 w-3" />
-                AI auto-detects log vs. search
+                AI auto-detects log, search or recipe
               </span>
             )}
           </div>
@@ -419,20 +441,20 @@ export function UnifiedInput({
         </div>
       </div>
 
-      {pantryNote && !activeError && (
+      {note && !activeError && (
         <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-3 py-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
-          <ShoppingBasket className="h-4 w-4 text-emerald-500 shrink-0" />
+          <NoteIcon className="h-4 w-4 text-emerald-500 shrink-0" />
           <p className="text-sm text-emerald-700 dark:text-emerald-300 flex-1">
-            {pantryNote}
+            {note.text}
           </p>
           <Link
-            href="/pantry"
+            href={note.href}
             className="shrink-0 text-xs font-medium text-emerald-700 dark:text-emerald-300 underline underline-offset-2 hover:no-underline"
           >
             View
           </Link>
           <button
-            onClick={() => setPantryNote(null)}
+            onClick={() => setNote(null)}
             aria-label="Dismiss"
             className="text-emerald-600/50 hover:text-emerald-600 transition-colors shrink-0 rounded-full p-0.5"
           >
