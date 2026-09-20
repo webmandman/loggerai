@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-guard";
-import { ONLINE_WINDOW_MS } from "@/lib/presence";
+import { isActivityFresh, ONLINE_WINDOW_MS } from "@/lib/presence";
 import type { PresenceUser } from "@/types";
 
 /** Nobody needs a 500-character "activity"; it has to fit under a face. */
@@ -33,10 +33,15 @@ export async function POST(request: NextRequest) {
 
   const userId = session.user.id;
 
+  // Only stamp activityAt when there is an activity, so a plain heartbeat
+  // does not keep an old note alive. Clearing the activity clears the stamp
+  // with it, which is what lets the note age out on its own.
+  const activityAt = activity ? new Date() : null;
+
   await prisma.presence.upsert({
     where: { userId },
-    create: { userId, path, activity },
-    update: { path, activity },
+    create: { userId, path, activity, activityAt },
+    update: { path, activity, activityAt },
   });
 
   const since = new Date(Date.now() - ONLINE_WINDOW_MS);
@@ -49,12 +54,18 @@ export async function POST(request: NextRequest) {
 
   // Only other people come back. The client already knows about itself, and
   // showing your own face in a "who else is here" list reads as a bug.
+  //
+  // Staleness is decided here, against this server's clock, so the browser
+  // never compares a server timestamp to the device's clock — a phone a few
+  // minutes out would otherwise hide fresh notes or keep showing dead ones.
+  const now = Date.now();
+
   const others: PresenceUser[] = rows.map((row) => ({
     userId: row.userId,
     name: row.user.name,
     image: row.user.image,
     path: row.path,
-    activity: row.activity,
+    activity: isActivityFresh(row.activityAt?.getTime(), now) ? row.activity : null,
     lastSeen: row.updatedAt.toISOString(),
   }));
 

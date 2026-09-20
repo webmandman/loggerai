@@ -34,22 +34,30 @@ export function PresenceBar() {
         // so a note never eats a tap meant for whatever is underneath it.
         className="absolute right-0 top-full mt-1.5 z-40 pointer-events-none flex flex-col items-end gap-1"
       >
-        {others.map((person) => (
-          <p
-            key={person.userId}
-            className={cn(
-              "whitespace-nowrap rounded-full border border-border/60",
-              "bg-popover/95 backdrop-blur-sm px-2.5 py-1",
-              "text-[11px] leading-none text-muted-foreground shadow-sm",
-              "animate-in fade-in slide-in-from-top-1 duration-200"
-            )}
-          >
-            <span className="font-medium text-foreground">
-              {firstName(person.name)}
-            </span>{" "}
-            {describePresence(person.path, person.activity)}
-          </p>
-        ))}
+        {others.map((person) => {
+          // A stale activity already arrived as null, so this quietly falls
+          // back to the route on the next heartbeat with no timer here.
+          const note = describePresence(person.path, person.activity);
+          const line = `${firstName(person.name)} ${note}`;
+
+          return (
+            <p
+              key={person.userId}
+              title={line}
+              className={cn(
+                "max-w-[60vw] truncate rounded-full border border-border/60",
+                "bg-popover/95 backdrop-blur-sm px-2.5 py-1",
+                "text-[11px] leading-none text-muted-foreground shadow-sm",
+                "animate-in fade-in slide-in-from-top-1 duration-200"
+              )}
+            >
+              <span className="font-medium text-foreground">
+                {firstName(person.name)}
+              </span>{" "}
+              {note}
+            </p>
+          );
+        })}
       </div>
     </div>
   );

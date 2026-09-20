@@ -96,6 +96,7 @@ export interface PresenceUser {
   image: string | null;
   /** Route they are on, used to describe them when `activity` is null. */
   path: string;
+  /** Already filtered server-side: anything past its TTL arrives as null. */
   activity: string | null;
   lastSeen: string;
 }

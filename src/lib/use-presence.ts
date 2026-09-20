@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { getActivity, HEARTBEAT_MS } from "./presence";
+import { HEARTBEAT_MS, onActivityChange, takeActivity } from "./presence";
 import type { PresenceUser } from "@/types";
 
 /**
@@ -30,7 +30,7 @@ export function usePresence(): PresenceUser[] {
         const res = await fetch("/api/presence", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: pathname, activity: getActivity() }),
+          body: JSON.stringify({ path: pathname, activity: takeActivity() }),
         });
         if (!res.ok) return;
         const data = await res.json();
@@ -49,11 +49,19 @@ export function usePresence(): PresenceUser[] {
     document.addEventListener("visibilitychange", onWake);
     window.addEventListener("focus", onWake);
 
+    // Someone adding an item should not wait up to ten seconds to be
+    // announced — the whole point of a broadcast is that it lands while the
+    // other person is still looking at the same screen.
+    const unsubscribe = onActivityChange(() => {
+      beat();
+    });
+
     return () => {
       cancelled = true;
       clearInterval(id);
       document.removeEventListener("visibilitychange", onWake);
       window.removeEventListener("focus", onWake);
+      unsubscribe();
     };
   }, [pathname]);
 

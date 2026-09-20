@@ -23,7 +23,7 @@ import {
 import { api } from "@/lib/api";
 import { cn, toLocalDateStr } from "@/lib/utils";
 import { dayLabel, MEAL_SLOTS, shiftDateStr } from "@/lib/plan";
-import { setActivity } from "@/lib/presence";
+import { reportAction, setActivity } from "@/lib/presence";
 import {
   defaultRecipeOptions,
   type DayPlan,
@@ -752,6 +752,7 @@ function PlanSheet({
       onError("Could not add that to the plan");
       return;
     }
+    reportAction(`planned ${recipe.title} for ${meal}`);
     setDay((prev) => (prev ? { ...prev, [meal]: recipe } : prev));
     setDone(meal);
     // Long enough to read the tick, short enough not to feel stuck.

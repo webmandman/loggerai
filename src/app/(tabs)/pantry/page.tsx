@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { api, writeSeq } from "@/lib/api";
 import { isStale } from "@/lib/live";
-import { setActivity } from "@/lib/presence";
+import { reportAction, setActivity } from "@/lib/presence";
 import { useLive } from "@/lib/use-live";
 import { downscaleImage } from "@/lib/image";
 import {
@@ -128,6 +128,9 @@ export default function PantryPage() {
         if (!res.ok) throw new Error(data.error || "Receipt scan failed");
 
         const cleared: string[] = data.clearedFromList ?? [];
+        reportAction(
+          `stocked ${data.stocked.length} item${data.stocked.length === 1 ? "" : "s"} from a receipt`
+        );
         setFlash(
           `Stocked ${data.stocked.length} item${data.stocked.length === 1 ? "" : "s"}` +
             (cleared.length ? ` · cleared ${cleared.join(", ")} off your list` : "")
@@ -159,7 +162,16 @@ export default function PantryPage() {
       if (!res.ok) {
         setError("Could not save that change");
         load();
+        return;
       }
+
+      // Announced only once it has actually landed: telling the house someone
+      // bought milk and then failing the write would be worse than silence.
+      reportAction(
+        status === "available"
+          ? `got ${item.label}`
+          : `put ${item.label} back on the list`
+      );
     },
     [load]
   );
@@ -177,7 +189,9 @@ export default function PantryPage() {
         setUndo(null);
         setError("Could not remove that item");
         load();
+        return;
       }
+      reportAction(`removed ${item.label}`);
     },
     [load]
   );
@@ -253,6 +267,9 @@ export default function PantryPage() {
       setError(data.error || "Could not add that item");
       return;
     }
+    reportAction(
+      tab === "needed" ? `added ${label} to the list` : `stocked ${label}`
+    );
     load();
   }, [newItem, tab, load]);
 

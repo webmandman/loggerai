@@ -151,8 +151,13 @@ model Presence {
   /// Route they are on, e.g. "/pantry". Used to describe them when there is
   /// no more specific activity to report.
   path      String
-  /// A longer-running thing they are doing right now, e.g. "scanning a
-  /// receipt". Null most of the time; `path` covers the rest.
+  /// What they are doing or just did, e.g. "scanning a receipt" or "added
+  /// peanut butter". Null most of the time; `path` covers the rest.
   activity  String?
+  /// When `activity` was set. Separate from `updatedAt`, which every
+  /// heartbeat bumps and so can never say how old the activity itself is.
+  /// Past ACTIVITY_TTL_MS the activity stops being shown, which is what
+  /// stops "added peanut butter" hanging under a face all evening.
+  activityAt DateTime?
   updatedAt DateTime @updatedAt
 }
