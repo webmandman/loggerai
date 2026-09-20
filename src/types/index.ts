@@ -48,6 +48,11 @@ export interface RecipeOptions {
   glutenFree: boolean;
   carbHeavy: boolean;
   proteinHeavy: boolean;
+  /**
+   * Skip the saved/favourite recipes and generate fresh ones. Lives here
+   * rather than in its own request field so the panel stays one state object.
+   */
+  newOnly: boolean;
 }
 
 /** What the options panel starts on before the cook touches anything. */
@@ -61,6 +66,7 @@ export function defaultRecipeOptions(now = new Date()): RecipeOptions {
     glutenFree: false,
     carbHeavy: false,
     proteinHeavy: false,
+    newOnly: false,
   };
 }
 

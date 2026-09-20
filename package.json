@@ -11,7 +11,8 @@
     "test:pantry": "node --test src/lib/pantry.test.ts",
     "test:swipe": "node --test src/lib/swipe.test.ts",
     "postinstall": "prisma generate",
-    "test:diet": "node --test src/lib/diet.test.ts"
+    "test:diet": "node --test src/lib/diet.test.ts",
+    "test:recipes": "node --test src/lib/recipes.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

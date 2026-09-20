@@ -84,6 +84,8 @@ export default function RecipesPage() {
       if (!res.ok) throw new Error(data.error || "Could not suggest recipes");
       setSuggestions(data.recipes);
       setPantryCount(data.pantryCount);
+      // Kept recipes came back but generating the rest failed: show both.
+      if (data.error) setError(data.error);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not suggest recipes");
     } finally {
@@ -226,6 +228,21 @@ export default function RecipesPage() {
                     })}
                   </div>
                 </div>
+
+                {/* Saved and favourite recipes fill the list first unless this
+                    is on, so a cook who wants something else can say so. */}
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={options.newOnly}
+                    onChange={(e) => set("newOnly", e.target.checked)}
+                    className="h-4 w-4 rounded border-border accent-primary"
+                  />
+                  <span className="text-sm">New only</span>
+                  <span className="text-xs text-muted-foreground">
+                    skip your saved recipes
+                  </span>
+                </label>
               </>
             ) : (
               <div className="h-40 rounded-xl bg-muted/40 animate-pulse" />

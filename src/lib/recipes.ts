@@ -1,4 +1,8 @@
-import type { SavedRecipe } from "@/types";
+// Relative imports on purpose, same as pantry.test.ts relies on: the "@/"
+// alias does not resolve under the bare `node --test` run.
+import { filterByDiet } from "./diet.ts";
+import { matchKey, normalizeItemName, type ExistingItem } from "./normalize.ts";
+import type { RecipeOptions, SavedRecipe } from "@/types";
 
 type Row = {
   id: string;
@@ -39,4 +43,52 @@ export function serializeRecipe(row: Row): SavedRecipe {
     favorite: row.favorite,
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+/**
+ * Assumed on hand, matching what the prompt tells the model to assume. Without
+ * these every saved recipe counts salt as a missing ingredient and nothing
+ * clears the allowedMissing bar.
+ */
+const STAPLES = ["salt", "pepper", "water", "oil"];
+
+/** True when the pantry covers this ingredient, or it is a staple. */
+function inPantry(item: string, pantry: ExistingItem[]): boolean {
+  const key = normalizeItemName(item);
+  if (!key) return false;
+  if (STAPLES.some((s) => key === s || key.endsWith(` ${s}`))) return true;
+  return matchKey(key, pantry).via !== "none";
+}
+
+/**
+ * Pick the kept recipes the household can cook right now, best first.
+ *
+ * Saved rows carry the `have` flags from the day they were suggested, and the
+ * pantry has moved on since — so they are recomputed against what is actually
+ * in stock before the missing-ingredient bar is applied. The rows arrive
+ * favourites-first from the query, and that order is what survives here.
+ *
+ * ponytail: no meal filter — nothing on a saved row says breakfast or dinner,
+ * so a kept pancake can show up under dinner. Add a `meal` column and pass it
+ * through the save if that starts to grate.
+ */
+export function matchFromSaved(
+  saved: SavedRecipe[],
+  pantry: ExistingItem[],
+  options: RecipeOptions,
+  limit: number
+): SavedRecipe[] {
+  const fresh = saved.map((r) => ({
+    ...r,
+    ingredients: r.ingredients.map((ing) => ({
+      ...ing,
+      have: inPantry(ing.item, pantry),
+    })),
+  }));
+
+  return filterByDiet(fresh, options)
+    .filter(
+      (r) => r.ingredients.filter((i) => !i.have).length <= options.allowedMissing
+    )
+    .slice(0, limit);
 }

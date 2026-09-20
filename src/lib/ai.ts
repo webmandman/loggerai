@@ -489,7 +489,7 @@ const RECIPE_SCHEMA = {
   properties: {
     recipes: {
       type: "array",
-      description: "Between 3 and 5 recipes.",
+      description: "Recipes, as many as the prompt asks for.",
       items: {
         type: "object",
         properties: {
@@ -570,7 +570,9 @@ function dietRules(o: RecipeOptions): string[] {
  */
 export async function suggestRecipes(
   pantry: string[],
-  options: RecipeOptions
+  options: RecipeOptions,
+  count = 5,
+  exclude: string[] = []
 ): Promise<Recipe[]> {
   const diet = dietRules(options);
 
@@ -583,6 +585,14 @@ Some pantry items below will be off-limits under these constraints. Leave them o
 `
     : "";
 
+  // Kept recipes are already on screen, so a generated duplicate would both
+  // waste a slot and collide with them on title.
+  const skip = exclude.length
+    ? `\n- These dishes are already on the cook's list. Do not suggest them or a near-copy of them:\n${exclude
+        .map((t) => `  - ${t}`)
+        .join("\n")}`
+    : "";
+
   const message = await anthropic.messages.create({
     model: MODEL,
     // Five full recipes with methods is a lot of tokens; truncation here would
@@ -592,7 +602,7 @@ Some pantry items below will be off-limits under these constraints. Leave them o
     messages: [
       {
         role: "user",
-        content: `Suggest 3-5 ${options.meal} recipes this household can cook from what is in their pantry right now.
+        content: `Suggest ${count} ${options.meal} recipe${count === 1 ? "" : "s"} this household can cook from what is in their pantry right now.
 
 ${constraints}Pantry:
 ${pantry.map((p) => `- ${p}`).join("\n")}
@@ -603,7 +613,7 @@ Rules:
 - Assume basic staples are on hand even if unlisted: salt, pepper, water, cooking oil. Mark those "have": true.
 - You may add at most ${options.allowedMissing} ingredient${options.allowedMissing === 1 ? "" : "s"} that ${options.allowedMissing === 1 ? "is" : "are"} NOT in the pantry, and only cheap common ones. Mark those "have": false. Prefer recipes that need none.
 - Set "have": true only for ingredients that appear in the pantry list above (or are basic staples).
-- Vary the suggestions: different cuisines, different effort levels.
+- Vary the suggestions: different cuisines, different effort levels.${skip}
 - Give a real, complete method — someone who has never made this dish should be able to follow it.`,
       },
     ],

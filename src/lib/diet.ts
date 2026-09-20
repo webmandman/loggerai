@@ -27,7 +27,7 @@ const DIET_BANNED: Record<"lactoseFree" | "glutenFree", string[]> = {
  * qualified ingredient ("lactose-free milk", "gluten-free pasta") is fine and
  * must survive the filter.
  */
-export function filterByDiet(recipes: Recipe[], options: RecipeOptions): Recipe[] {
+export function filterByDiet<T extends Recipe>(recipes: T[], options: RecipeOptions): T[] {
   const active = (["lactoseFree", "glutenFree"] as const).filter((k) => options[k]);
   if (active.length === 0) return recipes;
 

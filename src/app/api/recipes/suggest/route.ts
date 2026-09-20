@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-guard";
 import { suggestRecipes } from "@/lib/ai";
+import { matchFromSaved, serializeRecipe } from "@/lib/recipes";
 import { defaultRecipeOptions, type Meal, type RecipeOptions } from "@/types";
 
 // Five full recipes is a long generation; the 10s serverless default 504s.
 export const maxDuration = 60;
 
 const MEALS: Meal[] = ["breakfast", "lunch", "dinner"];
+
+/** How many suggestions a click should end up with, kept plus generated. */
+const WANTED = 5;
 
 /**
  * Options come from a client the user controls, so clamp rather than trust.
@@ -29,9 +33,17 @@ function parseOptions(body: unknown): RecipeOptions {
     glutenFree: b.glutenFree === true,
     carbHeavy: b.carbHeavy === true,
     proteinHeavy: b.proteinHeavy === true,
+    newOnly: b.newOnly === true,
   };
 }
 
+/**
+ * Kept recipes first, generation only for the slots they leave empty.
+ *
+ * Asking the model for five dishes when three favourites already fit the
+ * pantry is both slower and worse — the cook saved those for a reason. "New
+ * only" skips the kept ones outright, for when they want something else.
+ */
 export async function POST(request: NextRequest) {
   const { error } = await requireAuth();
   if (error) return error;
@@ -40,7 +52,7 @@ export async function POST(request: NextRequest) {
 
   const items = await prisma.pantryItem.findMany({
     where: { status: "available" },
-    select: { label: true, quantity: true },
+    select: { name: true, label: true, quantity: true, aliases: true },
     orderBy: { label: "asc" },
   });
 
@@ -48,14 +60,58 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ recipes: [], pantryCount: items.length });
   }
 
+  const kept = options.newOnly ? [] : await keptMatches(items, options);
+
+  if (kept.length >= WANTED) {
+    return NextResponse.json({ recipes: kept, pantryCount: items.length });
+  }
+
   try {
-    const recipes = await suggestRecipes(
+    const fresh = await suggestRecipes(
       items.map((i) => (i.quantity ? `${i.label} (${i.quantity})` : i.label)),
-      options
+      options,
+      WANTED - kept.length,
+      kept.map((r) => r.title)
     );
-    return NextResponse.json({ recipes, pantryCount: items.length });
+    return NextResponse.json({
+      recipes: [...kept, ...fresh],
+      pantryCount: items.length,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not suggest recipes";
+    // Losing the generation should not also lose the recipes we already have.
+    if (kept.length > 0) {
+      return NextResponse.json({
+        recipes: kept,
+        pantryCount: items.length,
+        error: message,
+      });
+    }
     return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+type PantryRow = { name: string; label: string; quantity: string | null; aliases: string };
+
+async function keptMatches(items: PantryRow[], options: RecipeOptions) {
+  const rows = await prisma.savedRecipe.findMany({
+    orderBy: [{ favorite: "desc" }, { createdAt: "desc" }],
+  });
+
+  const pantry = items.map((i) => ({
+    name: i.name,
+    aliases: parseAliases(i.aliases),
+  }));
+
+  return matchFromSaved(rows.map(serializeRecipe), pantry, options, WANTED);
+}
+
+/** Aliases are a JSON text column; a malformed one is just no aliases. */
+function parseAliases(raw: string): string[] {
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((a) => typeof a === "string") : [];
+  } catch {
+    return [];
   }
 }
