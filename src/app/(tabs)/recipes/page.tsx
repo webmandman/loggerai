@@ -1,23 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertCircle,
   Bookmark,
+  CalendarPlus,
   Check,
   ChefHat,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Loader2,
   Plus,
+  SlidersHorizontal,
   Sparkles,
   Star,
   Users,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, toLocalDateStr } from "@/lib/utils";
+import { dayLabel, MEAL_SLOTS, shiftDateStr } from "@/lib/plan";
 import {
   defaultRecipeOptions,
+  type DayPlan,
   type Meal,
   type Recipe,
   type RecipeOptions,
@@ -26,7 +34,6 @@ import {
 
 type Tab = "suggest" | "saved";
 
-const MEALS: Meal[] = ["breakfast", "lunch", "dinner"];
 const SERVINGS = [1, 2, 3, 4, 5];
 const MISSING = [1, 2, 3];
 
@@ -51,6 +58,8 @@ export default function RecipesPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  // The recipe whose "add to plan" sheet is up, null when the sheet is closed.
+  const [planning, setPlanning] = useState<SavedRecipe | null>(null);
 
   useEffect(() => {
     // The clock is only readable once we are on the cook's device.
@@ -127,8 +136,39 @@ export default function RecipesPage() {
     [savedByTitle, loadSaved]
   );
 
+  /**
+   * The saved row for a recipe, saving it first if it is only a suggestion.
+   *
+   * Starring and planning both need a row with an id. Making the cook save
+   * first would be two taps for something they have already decided on, so
+   * the save rides along.
+   */
+  const ensureSaved = useCallback(
+    async (recipe: Recipe): Promise<SavedRecipe | null> => {
+      const existing = savedByTitle.get(recipe.title);
+      if (existing) return existing;
+
+      const res = await api("/api/recipes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(recipe),
+      });
+      if (!res.ok) {
+        setError("Could not save that recipe");
+        return null;
+      }
+      const row: SavedRecipe = await res.json();
+      setSaved((prev) => [row, ...prev]);
+      return row;
+    },
+    [savedByTitle]
+  );
+
   const toggleFavorite = useCallback(
-    async (item: SavedRecipe) => {
+    async (recipe: Recipe) => {
+      const item = await ensureSaved(recipe);
+      if (!item) return;
+
       const favorite = !item.favorite;
       setSaved((prev) =>
         prev.map((s) => (s.id === item.id ? { ...s, favorite } : s))
@@ -144,7 +184,15 @@ export default function RecipesPage() {
         loadSaved();
       }
     },
-    [loadSaved]
+    [ensureSaved, loadSaved]
+  );
+
+  const startPlanning = useCallback(
+    async (recipe: Recipe) => {
+      const item = await ensureSaved(recipe);
+      if (item) setPlanning(item);
+    },
+    [ensureSaved]
   );
 
   const set = <K extends keyof RecipeOptions>(key: K, value: RecipeOptions[K]) =>
@@ -186,7 +234,7 @@ export default function RecipesPage() {
               <>
                 <Segmented
                   label="Meal"
-                  options={MEALS.map((m) => ({ value: m, label: m }))}
+                  options={MEAL_SLOTS.map((m) => ({ value: m, label: m }))}
                   value={options.meal}
                   onChange={(v) => set("meal", v)}
                   capitalize
@@ -228,6 +276,19 @@ export default function RecipesPage() {
                     })}
                   </div>
                 </div>
+
+                <Link
+                  href="/recipes/preferences"
+                  className="flex items-center justify-between gap-2 rounded-xl border border-border px-3 py-2.5 text-sm hover:bg-accent transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+                    Taste and preferences
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    what the model is told about you
+                  </span>
+                </Link>
 
                 {/* Saved and favourite recipes fill the list first unless this
                     is on, so a cook who wants something else can say so. */}
@@ -295,7 +356,8 @@ export default function RecipesPage() {
                   expanded={open === r.title}
                   onToggle={() => setOpen(open === r.title ? null : r.title)}
                   onToggleSave={() => toggleSave(r)}
-                  onToggleFavorite={toggleFavorite}
+                  onToggleFavorite={() => toggleFavorite(r)}
+                  onPlan={() => startPlanning(r)}
                 />
               ))}
             </ul>
@@ -319,10 +381,19 @@ export default function RecipesPage() {
               expanded={open === r.title}
               onToggle={() => setOpen(open === r.title ? null : r.title)}
               onToggleSave={() => toggleSave(r)}
-              onToggleFavorite={toggleFavorite}
+              onToggleFavorite={() => toggleFavorite(r)}
+              onPlan={() => startPlanning(r)}
             />
           ))}
         </ul>
+      )}
+
+      {planning && (
+        <PlanSheet
+          recipe={planning}
+          onClose={() => setPlanning(null)}
+          onError={setError}
+        />
       )}
     </div>
   );
@@ -420,13 +491,15 @@ function RecipeCard({
   onToggle,
   onToggleSave,
   onToggleFavorite,
+  onPlan,
 }: {
   recipe: Recipe;
   saved?: SavedRecipe;
   expanded: boolean;
   onToggle: () => void;
   onToggleSave: () => void;
-  onToggleFavorite: (item: SavedRecipe) => void;
+  onToggleFavorite: () => void;
+  onPlan: () => void;
 }) {
   const missing = recipe.ingredients.filter((i) => !i.have);
   const [added, setAdded] = useState(false);
@@ -453,7 +526,10 @@ function RecipeCard({
 
   return (
     <li className="rounded-2xl border border-border bg-card overflow-hidden">
-      <div className="flex items-start">
+      {/* The rail stretches to the summary, not to the card: the expanded
+          method renders as a sibling below this row, so opening a recipe
+          leaves the three buttons exactly where the finger last found them. */}
+      <div className="flex items-stretch">
         <button
           onClick={onToggle}
           aria-expanded={expanded}
@@ -495,7 +571,10 @@ function RecipeCard({
           </div>
         </button>
 
-        <div className="flex flex-col gap-1 pr-2 pt-3">
+        {/* Three buttons, always three: starring or planning a suggestion
+            keeps it first, so none of them has to disappear on an unsaved
+            card and shuffle the other two. */}
+        <div className="flex flex-col justify-between shrink-0 pr-2 py-3">
           <button
             onClick={onToggleSave}
             aria-label={saved ? `Unsave ${recipe.title}` : `Save ${recipe.title}`}
@@ -507,33 +586,35 @@ function RecipeCard({
                 : "text-muted-foreground/40 hover:text-primary hover:bg-primary/10"
             )}
           >
-            {saved ? (
-              <Bookmark className="h-4 w-4 fill-current" />
-            ) : (
-              <Bookmark className="h-4 w-4" />
-            )}
+            <Bookmark className={cn("h-4 w-4", saved && "fill-current")} />
           </button>
 
-          {/* Favouriting only means anything once a recipe is kept. */}
-          {saved && (
-            <button
-              onClick={() => onToggleFavorite(saved)}
-              aria-label={
-                saved.favorite
-                  ? `Remove ${recipe.title} from favourites`
-                  : `Mark ${recipe.title} a favourite`
-              }
-              title={saved.favorite ? "Favourite" : "Mark as favourite"}
-              className={cn(
-                "h-8 w-8 rounded-lg flex items-center justify-center transition-colors",
-                saved.favorite
-                  ? "text-amber-500 hover:bg-amber-500/10"
-                  : "text-muted-foreground/40 hover:text-amber-500 hover:bg-amber-500/10"
-              )}
-            >
-              <Star className={cn("h-4 w-4", saved.favorite && "fill-current")} />
-            </button>
-          )}
+          <button
+            onClick={onToggleFavorite}
+            aria-label={
+              saved?.favorite
+                ? `Remove ${recipe.title} from favourites`
+                : `Mark ${recipe.title} a favourite`
+            }
+            title={saved?.favorite ? "Favourite" : "Mark as favourite"}
+            className={cn(
+              "h-8 w-8 rounded-lg flex items-center justify-center transition-colors",
+              saved?.favorite
+                ? "text-amber-500 hover:bg-amber-500/10"
+                : "text-muted-foreground/40 hover:text-amber-500 hover:bg-amber-500/10"
+            )}
+          >
+            <Star className={cn("h-4 w-4", saved?.favorite && "fill-current")} />
+          </button>
+
+          <button
+            onClick={onPlan}
+            aria-label={`Add ${recipe.title} to the meal plan`}
+            title="Add to the meal plan"
+            className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground/40 hover:text-primary hover:bg-primary/10 transition-colors"
+          >
+            <CalendarPlus className="h-4 w-4" />
+          </button>
         </div>
       </div>
 
@@ -607,6 +688,164 @@ function RecipeCard({
         </div>
       )}
     </li>
+  );
+}
+
+/**
+ * Pick a day and a day part for one recipe.
+ *
+ * Shows what is already in each slot, because "dinner" being taken is the
+ * thing you want to know before you overwrite it — the PUT upserts, so a
+ * blind tap would quietly replace whatever was there.
+ */
+function PlanSheet({
+  recipe,
+  onClose,
+  onError,
+}: {
+  recipe: SavedRecipe;
+  onClose: () => void;
+  onError: (message: string) => void;
+}) {
+  const [today] = useState(() => toLocalDateStr());
+  const [date, setDate] = useState(today);
+  const [day, setDay] = useState<DayPlan | null>(null);
+  const [saving, setSaving] = useState<Meal | null>(null);
+  const [done, setDone] = useState<Meal | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const res = await api(`/api/plan?date=${date}`);
+      if (cancelled || !res.ok) return;
+      const data = await res.json();
+      if (!cancelled) setDay(data.plan);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [date]);
+
+  /** Stepping the day blanks the slots here rather than in the effect above,
+   *  so the fetch is the only thing the effect does. */
+  const step = (days: number) => {
+    setDay(null);
+    setDone(null);
+    setDate((d) => shiftDateStr(d, days));
+  };
+
+  const choose = async (meal: Meal) => {
+    setSaving(meal);
+    const res = await api("/api/plan", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date, meal, recipeId: recipe.id }),
+    });
+    setSaving(null);
+
+    if (!res.ok) {
+      onError("Could not add that to the plan");
+      return;
+    }
+    setDay((prev) => (prev ? { ...prev, [meal]: recipe } : prev));
+    setDone(meal);
+    // Long enough to read the tick, short enough not to feel stuck.
+    setTimeout(onClose, 700);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center">
+      <button
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-in fade-in duration-150"
+      />
+
+      <div
+        role="dialog"
+        aria-label={`Add ${recipe.title} to the meal plan`}
+        className="relative w-full max-w-2xl rounded-t-3xl border-t border-x border-border bg-background p-4 pb-8 space-y-4 animate-in slide-in-from-bottom duration-200"
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-muted-foreground">Add to the plan</p>
+            <h3 className="font-semibold leading-tight truncate">{recipe.title}</h3>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="h-8 w-8 shrink-0 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => step(-1)}
+            aria-label="Previous day"
+            className="h-9 w-9 shrink-0 rounded-xl border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <div className="flex-1 text-center">
+            <p className="text-sm font-medium">{dayLabel(date, today)}</p>
+            <p className="text-xs text-muted-foreground tabular-nums">{date}</p>
+          </div>
+          <button
+            onClick={() => step(1)}
+            aria-label="Next day"
+            className="h-9 w-9 shrink-0 rounded-xl border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        <ul className="space-y-2">
+          {MEAL_SLOTS.map((meal) => {
+            const taken = day?.[meal] ?? null;
+            const isThis = taken?.id === recipe.id;
+
+            return (
+              <li key={meal}>
+                <button
+                  onClick={() => choose(meal)}
+                  disabled={saving !== null}
+                  className={cn(
+                    "w-full flex items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors",
+                    done === meal
+                      ? "border-emerald-500/40 bg-emerald-500/10"
+                      : "border-border hover:bg-accent disabled:opacity-60"
+                  )}
+                >
+                  <span className="w-20 shrink-0 text-sm font-medium capitalize">
+                    {meal}
+                  </span>
+                  <span className="flex-1 min-w-0 truncate text-sm text-muted-foreground">
+                    {day === null
+                      ? "…"
+                      : isThis
+                        ? "already this one"
+                        : (taken?.title ?? "None")}
+                  </span>
+                  {saving === meal ? (
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                  ) : done === meal ? (
+                    <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  ) : (
+                    <Plus className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+
+        <p className="text-center text-xs text-muted-foreground/60">
+          A slot holds one dish. Picking replaces what is in it.
+        </p>
+      </div>
+    </div>
   );
 }
 

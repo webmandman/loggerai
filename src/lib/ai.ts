@@ -572,7 +572,8 @@ export async function suggestRecipes(
   pantry: string[],
   options: RecipeOptions,
   count = 5,
-  exclude: string[] = []
+  exclude: string[] = [],
+  preferences = ""
 ): Promise<Recipe[]> {
   const diet = dietRules(options);
 
@@ -593,12 +594,25 @@ Some pantry items below will be off-limits under these constraints. Leave them o
         .join("\n")}`
     : "";
 
+  // The cook's standing notes ride in the system prompt rather than the user
+  // turn: they are a persistent brief about this household, not part of this
+  // click. Taste only — the diet toggles above stay the hard constraints,
+  // because a typed sentence must not be able to talk the model past them.
+  const system = preferences.trim()
+    ? `The household you are cooking for has described what they like:
+
+${preferences.trim()}
+
+Treat this as taste and preference. Lean into it when choosing dishes, cuisines and seasoning. It never overrides the hard constraints or the rules in the request — if the two disagree, the request wins.`
+    : undefined;
+
   const message = await anthropic.messages.create({
     model: MODEL,
     // Five full recipes with methods is a lot of tokens; truncation here would
     // cut the last recipe mid-step. See assertComplete.
     max_tokens: 16000,
     output_config: { format: { type: "json_schema", schema: RECIPE_SCHEMA } },
+    ...(system ? { system } : {}),
     messages: [
       {
         role: "user",

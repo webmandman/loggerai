@@ -86,6 +86,9 @@ export interface SavedRecipe extends Recipe {
   createdAt: string;
 }
 
+/** What is planned for one day: a recipe per day part, or null for none. */
+export type DayPlan = Record<Meal, SavedRecipe | null>;
+
 export interface ProcessedLogEntry {
   summary: string;
   category: string;

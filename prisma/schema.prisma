@@ -104,8 +104,37 @@ model SavedRecipe {
   ingredients String // JSON array of { item, amount, have }
   steps       String // JSON array of strings
   favorite    Boolean  @default(false)
+  plans       MealPlan[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([favorite])
+}
+
+/// One recipe pinned to a day part. `date` is a plain "YYYY-MM-DD" local date
+/// rather than a DateTime: the plan is "what are we eating Saturday", and a
+/// timestamp would shift that across a timezone or a DST boundary.
+/// Unique on (date, meal) — a day part holds exactly one dish, so choosing
+/// again replaces rather than stacks.
+model MealPlan {
+  id        String      @id @default(cuid())
+  date      String
+  meal      String // "breakfast" | "lunch" | "dinner"
+  recipeId  String
+  recipe    SavedRecipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@unique([date, meal])
+  @@index([date])
+}
+
+/// Household-wide key/value scratch. Currently holds exactly one key,
+/// "recipePreferences" — the free text the cook wants folded into every
+/// suggestion prompt. Shared, like the pantry and the recipes, because the
+/// people eating are the same people.
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

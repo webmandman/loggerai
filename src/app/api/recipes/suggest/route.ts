@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-guard";
 import { suggestRecipes } from "@/lib/ai";
 import { matchFromSaved, serializeRecipe } from "@/lib/recipes";
+import { PREFERENCES_KEY } from "@/lib/preferences";
 import { defaultRecipeOptions, type Meal, type RecipeOptions } from "@/types";
 
 // Five full recipes is a long generation; the 10s serverless default 504s.
@@ -67,11 +68,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const prefs = await prisma.setting.findUnique({ where: { key: PREFERENCES_KEY } });
+
     const fresh = await suggestRecipes(
       items.map((i) => (i.quantity ? `${i.label} (${i.quantity})` : i.label)),
       options,
       WANTED - kept.length,
-      kept.map((r) => r.title)
+      kept.map((r) => r.title),
+      prefs?.value ?? ""
     );
     return NextResponse.json({
       recipes: [...kept, ...fresh],

@@ -3,7 +3,7 @@
 import { useCallback, useRef, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChefHat, List, Mic, ShoppingBasket } from "lucide-react";
+import { CalendarDays, ChefHat, List, Mic, ShoppingBasket } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSpeech } from "@/lib/speech-context";
 
@@ -66,7 +66,10 @@ export function BottomNav() {
 
   const isFeed = pathname === "/feed";
   const isPantry = pathname === "/pantry";
-  const isRecipes = pathname === "/recipes";
+  const isPlan = pathname === "/plan";
+  // Preferences lives under /recipes, and the tab it was opened from should
+  // stay lit while you are in there.
+  const isRecipes = pathname.startsWith("/recipes");
 
   const linkClass = (active: boolean) =>
     cn(
@@ -136,6 +139,10 @@ export function BottomNav() {
           <Link href="/recipes" className={linkClass(isRecipes)}>
             <ChefHat className="h-5 w-5" />
             <span className="text-[10px] font-medium">Recipes</span>
+          </Link>
+          <Link href="/plan" className={linkClass(isPlan)}>
+            <CalendarDays className="h-5 w-5" />
+            <span className="text-[10px] font-medium">Plan</span>
           </Link>
         </div>
       </div>
