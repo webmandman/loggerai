@@ -6,6 +6,7 @@ import {
   toPantryRows,
   type ExistingItem,
 } from "@/lib/normalize";
+import { resolveKeys } from "@/lib/pantry-match";
 
 export { normalizeItemName };
 
@@ -77,18 +78,26 @@ async function write(
 
   const existing = await loadExisting();
   const byName = new Map(existing.map((e) => [e.name, e]));
+  const matches = await resolveKeys(
+    rows.map((r) => r.name),
+    existing
+  );
 
   const writes = rows.map((row) => {
     const incomingAliases = items.find(
       (i) => normalizeItemName(i.name || i.label || "") === row.name
     )?.aliases;
 
-    const match = matchKey(row.name, existing);
+    const match = matches.get(row.name) ?? matchKey(row.name, existing);
     const target = byName.get(match.name);
 
     // A non-exact match taught us a new name for this item. Store it so the
-    // next mention is an exact hit and stays correct as the pantry changes.
-    const learned = match.via === "alias" || match.via === "subset" ? [row.name] : [];
+    // next mention is an exact hit and stays correct as the pantry changes —
+    // which is also what stops the judgment being asked about it ever again.
+    const learned =
+      match.via === "alias" || match.via === "subset" || match.via === "judged"
+        ? [row.name]
+        : [];
 
     const name = match.name;
     const label = target && !relabel ? target.label : row.label;
@@ -138,11 +147,21 @@ export function markNeeded(items: PantryInput[], source: PantrySource = "message
   return write(items, "needed", source, false);
 }
 
-/** Names a receipt item would land on, for reporting what a scan cleared. */
+/**
+ * Names a receipt item would land on, for reporting what a scan cleared.
+ *
+ * ponytail: the receipt route calls this and then `markAvailable`, so the same
+ * items get resolved twice. Free when every name is an exact hit, which is the
+ * steady state, and one extra small request on a shop with genuinely new
+ * items. Fold the "was it needed" read into `write` if that ever stops being
+ * true — it has the rows and the statuses already.
+ */
 export async function resolveNames(items: PantryInput[]): Promise<string[]> {
   const existing = await loadExisting();
-  return items
+  const names = items
     .map((i) => normalizeItemName(i.name || i.label || ""))
-    .filter(Boolean)
-    .map((name) => matchKey(name, existing).name);
+    .filter(Boolean);
+
+  const matches = await resolveKeys(names, existing);
+  return names.map((name) => matches.get(name)?.name ?? name);
 }

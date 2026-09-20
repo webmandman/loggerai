@@ -68,8 +68,12 @@ export interface ExistingItem {
 export interface KeyMatch {
   /** The row to write to — an existing item's name, or `incoming` for a new row. */
   name: string;
-  /** How it matched. "none" means no existing row fits; write a new one. */
-  via: "exact" | "alias" | "subset" | "none";
+  /**
+   * How it matched. "none" means no existing row fits; write a new one.
+   * "judged" never comes out of `matchKey` — it is what pantry-match.ts marks
+   * a match it resolved by asking, once the word passes below came up empty.
+   */
+  via: "exact" | "alias" | "subset" | "judged" | "none";
 }
 
 /**
