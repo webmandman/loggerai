@@ -1,8 +1,8 @@
 /**
- * Live evals for the three TypeSafe judgments.
+ * Live evals for the four TypeSafe judgments.
  *
- *   npm run eval              all three
- *   npm run eval -- intent    just one: diet | pantry | intent
+ *   npm run eval              all four
+ *   npm run eval -- intent    just one: diet | pantry | intent | attribution
  *
  * These call the real API and cost real tokens, which is why they are not in
  * `npm test`. Run them when the model version moves, when a question's wording
@@ -23,6 +23,7 @@ import { filterByDiet } from "../src/lib/diet.ts";
 import { classifyInput, type Intent } from "../src/lib/intent.ts";
 import { matchKey } from "../src/lib/normalize.ts";
 import { resolveKeys } from "../src/lib/pantry-match.ts";
+import { attributeEntries } from "../src/lib/query-stream.ts";
 import type { Recipe, RecipeOptions } from "../src/types/index.ts";
 
 interface Row {
@@ -252,9 +253,49 @@ async function intentEval(): Promise<number> {
   return report("Intent classification — 18 inputs", rows);
 }
 
+// --- entry attribution ---------------------------------------------------
+
+/**
+ * The recovery pass behind a streamed answer, for when the model never gets
+ * to its id list. It reads the finished answer, so the discriminating cases
+ * are entries that share the answer's TOPIC without being used by it.
+ */
+const ANSWER =
+  "You ran three times in September: a 5k on the 3rd, another on the 12th, and a 10k on the 21st.";
+
+const ENTRIES: Array<{ id: string; when: string; summary: string; used: boolean }> = [
+  { id: "e1", when: "2026-09-03", summary: "Morning 5k run in the park", used: true },
+  { id: "e2", when: "2026-09-05", summary: "Team meeting about the Q3 budget", used: false },
+  { id: "e3", when: "2026-09-12", summary: "Evening 5k run, felt strong", used: true },
+  { id: "e4", when: "2026-09-15", summary: "Bought milk, eggs and coffee", used: false },
+  { id: "e5", when: "2026-09-21", summary: "Ran 10k on the trail", used: true },
+  { id: "e6", when: "2026-09-22", summary: "Fixed the login redirect bug", used: false },
+  // The one that matters: about running, not one of the three runs counted.
+  { id: "e7", when: "2026-09-18", summary: "Bought new running shoes", used: false },
+  // Also about running, also not counted — it is the wrong month.
+  { id: "e8", when: "2026-08-28", summary: "Short recovery jog", used: false },
+];
+
+async function attributionEval(): Promise<number> {
+  const picked = new Set(await attributeEntries(ANSWER, ENTRIES));
+
+  const rows = ENTRIES.map((e) => ({
+    label: `${e.when}  ${e.summary}`,
+    want: e.used ? "cited" : "not cited",
+    got: picked.has(e.id) ? "cited" : "not cited",
+  }));
+
+  return report("Entry attribution — the fallback when the marker is lost", rows);
+}
+
 // --- runner --------------------------------------------------------------
 
-const EVALS = { diet: dietEval, pantry: pantryEval, intent: intentEval };
+const EVALS = {
+  diet: dietEval,
+  pantry: pantryEval,
+  intent: intentEval,
+  attribution: attributionEval,
+};
 
 const asked = process.argv.slice(2).filter((a) => a in EVALS) as Array<keyof typeof EVALS>;
 const running = asked.length ? asked : (Object.keys(EVALS) as Array<keyof typeof EVALS>);

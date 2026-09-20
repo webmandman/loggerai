@@ -10,6 +10,12 @@ import type {
 import { toLocalDateStr } from "@/lib/utils";
 import { screenDiet } from "@/lib/diet-check";
 import { parseDictatedRecipe, type DictatedRecipe } from "@/lib/recipes";
+import {
+  attributeEntries,
+  ID_MARKER,
+  parseEntryIds,
+  splitStream,
+} from "@/lib/query-stream";
 
 export const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 
@@ -427,7 +433,7 @@ User question: "${question}"
 
 IMPORTANT: Structure your response in exactly this format:
 1. First, write your natural language answer based ONLY on the log entries above. Do not include any information from outside these entries.
-2. Then on a new line, write exactly: ---ENTRY_IDS---
+2. Then on a new line, write exactly: ${ID_MARKER}
 3. Then on a new line, write a JSON array of relevant entry IDs, e.g. ["id1","id2"]
 
 If no entries are relevant, write an empty array [].`;
@@ -458,32 +464,63 @@ export function queryLogsStreaming(
           messages: [{ role: "user", content: prompt }],
         });
 
-        let fullText = "";
+        const send = (event: object) =>
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+
+        // `held` is text that cannot be shown yet because it could still turn
+        // out to be the start of the marker; `answer` is what the reader has
+        // actually seen, which is also what the attribution pass reads back.
+        let held = "";
+        let answer = "";
+        let tail: string | null = null;
 
         stream.on("text", (text) => {
-          fullText += text;
-          const markerIdx = fullText.indexOf("---ENTRY_IDS---");
-          if (markerIdx === -1) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "delta", text })}\n\n`));
+          if (tail !== null) {
+            tail += text; // past the marker: everything from here is the array
+            return;
+          }
+
+          const split = splitStream(held + text);
+          held = split.hold;
+          tail = split.tail;
+
+          if (split.emit) {
+            answer += split.emit;
+            send({ type: "delta", text: split.emit });
           }
         });
 
-        const finalMessage = await stream.finalMessage();
-        const fullContent = textFrom(finalMessage) || fullText;
+        await stream.finalMessage();
 
-        let relevantEntryIds: string[] = [];
-        const markerIdx = fullContent.indexOf("---ENTRY_IDS---");
-        if (markerIdx !== -1) {
-          const idsStr = fullContent.slice(markerIdx + "---ENTRY_IDS---".length).trim();
-          try {
-            const parsed = JSON.parse(idsStr);
-            if (Array.isArray(parsed)) relevantEntryIds = parsed;
-          } catch { /* ignore */ }
+        // Nothing more is coming, so anything still held was text after all.
+        if (tail === null && held) {
+          const split = splitStream(held, true);
+          if (split.emit) {
+            answer += split.emit;
+            send({ type: "delta", text: split.emit });
+          }
         }
 
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: "done", relevantEntryIds })}\n\n`)
+        let relevantEntryIds = parseEntryIds(
+          tail,
+          entries.map((e) => e.id)
         );
+
+        // No marker, or a tail that will not parse — which also covers an
+        // answer cut off at max_tokens before it reached one. Read the ids
+        // off the finished answer rather than showing nothing.
+        if (relevantEntryIds === null) {
+          relevantEntryIds = await attributeEntries(
+            answer,
+            entries.map((e) => ({
+              id: e.id,
+              summary: e.summary,
+              when: toLocalDateStr(e.createdAt),
+            }))
+          );
+        }
+
+        send({ type: "done", relevantEntryIds });
         controller.close();
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Streaming failed";
