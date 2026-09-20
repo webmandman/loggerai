@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-guard";
 import { classifyIntent, extractDictatedRecipe, processLogEntry } from "@/lib/ai";
+import { classifyInput, type Verdict } from "@/lib/intent";
 import { availableItems, markAvailable, markNeeded } from "@/lib/pantry";
 import { serializeRecipe, withPantryFlags } from "@/lib/recipes";
 import { normalizeActionItems, parseLocalDate } from "@/lib/utils";
@@ -11,6 +12,15 @@ import { normalizeActionItems, parseLocalDate } from "@/lib/utils";
 // through here already ran a 16k-token call on the 10s default and got away
 // with it; the recipe path would not.
 export const maxDuration = 60;
+
+/**
+ * Said when there is no recipe to be had from a dictation. One constant
+ * because two places refuse: the cheap speculative check before extraction,
+ * and parseDictatedRecipe's ingredient count after it. The person should not
+ * be able to tell which one turned them down.
+ */
+const NO_RECIPE_HEARD =
+  "I couldn't hear a recipe in that. Try the dish name and its ingredients.";
 
 /** The Anthropic failure modes worth their own message, for either AI call. */
 function aiFailure(err: unknown, what: string): NextResponse {
@@ -50,9 +60,17 @@ export async function POST(request: NextRequest) {
 
   const trimmed = rawInput.trim();
 
-  let intent: "log" | "query" | "recipe" | "reject";
+  let verdict: Verdict;
   try {
-    intent = await classifyIntent(trimmed);
+    // classifyInput returns null only when TypeSafe is unreachable. The older
+    // generation call still classifies correctly, it is just slower and
+    // answers one question instead of four — so the dictation check it cannot
+    // make defaults to "assume there is a recipe in there" and the real check
+    // in parseDictatedRecipe catches it after extraction, as it always did.
+    verdict = (await classifyInput(trimmed)) ?? {
+      intent: await classifyIntent(trimmed),
+      dictationLooksComplete: true,
+    };
   } catch (err) {
     console.error("classifyIntent failed", err);
     return NextResponse.json(
@@ -65,18 +83,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (intent === "reject") {
+  if (verdict.intent === "reject") {
     return NextResponse.json(
       { error: "This doesn't look like a personal log entry or question about your logs. Please try rephrasing." },
       { status: 400 }
     );
   }
 
-  if (intent === "query") {
+  if (verdict.intent === "query") {
     return NextResponse.json({ type: "query_stream" });
   }
 
-  if (intent === "recipe") {
+  if (verdict.intent === "recipe") {
+    // Turned down before the extraction call rather than after it. "Save a
+    // recipe for chicken" is a request, not a dictation, and asking the model
+    // to extract one makes it invent a dish to fill the gap — which is what
+    // parseDictatedRecipe then throws away. Same refusal, one call cheaper.
+    if (!verdict.dictationLooksComplete) {
+      return NextResponse.json({ error: NO_RECIPE_HEARD }, { status: 422 });
+    }
     return saveDictatedRecipe(trimmed, inputMethod, session!.user!.id);
   }
 
@@ -159,10 +184,7 @@ async function saveDictatedRecipe(
   }
 
   if (!dictated) {
-    return NextResponse.json(
-      { error: "I couldn't hear a recipe in that. Try the dish name and its ingredients." },
-      { status: 422 }
-    );
+    return NextResponse.json({ error: NO_RECIPE_HEARD }, { status: 422 });
   }
   if (dictated.recipe.steps.length === 0) {
     return NextResponse.json(

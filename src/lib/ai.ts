@@ -51,6 +51,15 @@ export function textFrom(message: Anthropic.Message): string {
   return (fenced ? fenced[1] : raw).trim();
 }
 
+/**
+ * The fallback classifier, kept for when TypeSafe is unreachable.
+ *
+ * `classifyInput` in lib/intent.ts is the live path now — five times faster,
+ * and it splits "reject" out of the intent so an injection attempt stops
+ * competing with the thing the person actually asked for. This still works,
+ * including its default-to-"log" on any answer it does not recognise, which
+ * is the behaviour /api/process falls back to rather than erroring.
+ */
 export async function classifyIntent(
   input: string
 ): Promise<"log" | "query" | "recipe" | "reject"> {

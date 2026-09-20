@@ -14,7 +14,8 @@
     "test:diet": "node --test src/lib/diet.test.ts",
     "test:recipes": "node --test src/lib/recipes.test.ts",
     "test:diet-check": "node --test src/lib/diet-check.test.ts",
-    "test:pantry-match": "node --test src/lib/pantry-match.test.ts"
+    "test:pantry-match": "node --test src/lib/pantry-match.test.ts",
+    "test:intent": "node --test src/lib/intent.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
