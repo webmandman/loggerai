@@ -2,6 +2,7 @@
 // alias does not resolve under the bare `node --test` run.
 import { matchKey, normalizeItemName, type ExistingItem } from "./normalize.ts";
 import { MEAL_SLOTS, daysBetween, shiftDateStr } from "./plan.ts";
+import type { SlotResult } from "./plan-slot.ts";
 import type { Meal, Recipe, RecipeOptions, SavedRecipe } from "@/types";
 
 type Row = {
@@ -135,8 +136,18 @@ export interface DictatedRecipe {
  * Returns null when there is no recipe in there at all — no name, or nothing
  * to cook with. The route turns that into a "say that again" rather than
  * saving an empty row.
+ *
+ * `slot` is the day part already settled by `resolveSlot`, which picks from a
+ * list of days that code built forward from today. Passing it — including as
+ * `null`, meaning they named no day — is what makes a past date impossible.
+ * Leaving it `undefined` means it could not be asked, and the model's own
+ * planDate is used with the repair loop below.
  */
-export function parseDictatedRecipe(raw: unknown, today: string): DictatedRecipe | null {
+export function parseDictatedRecipe(
+  raw: unknown,
+  today: string,
+  slot?: SlotResult
+): DictatedRecipe | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
 
@@ -179,21 +190,31 @@ export function parseDictatedRecipe(raw: unknown, today: string): DictatedRecipe
     steps,
   };
 
+  return { recipe, plan: slot !== undefined ? slot : repairModelDate(r, today) };
+}
+
+/**
+ * The old way of settling the day: take the model's own date and walk it
+ * forward until it is not in the past.
+ *
+ * Only reached when `resolveSlot` could not run. It is kept because it works,
+ * not because it is good — the model resolves "Monday" to the Monday just gone
+ * often enough that this loop exists, and a date more than two weeks stale
+ * still ends up dropped. When the slot can be chosen from a list of days that
+ * are all today or later, none of this can arise.
+ */
+function repairModelDate(r: Record<string, unknown>, today: string): DictatedRecipe["plan"] {
   const meal = MEAL_SLOTS.includes(r.planMeal as Meal) ? (r.planMeal as Meal) : null;
   let date =
     typeof r.planDate === "string" && DATE_KEY.test(r.planDate) ? r.planDate : null;
 
-  let plan: DictatedRecipe["plan"] = null;
-  if (date && meal) {
-    // The model sometimes resolves "Monday" to the Monday just gone. Nobody
-    // dictating dinner means a slot in the past, so walk it forward a week at a
-    // time; still past after two, it was misheard — drop the plan, keep the
-    // recipe, and let them pick a day on the Plan tab.
-    for (let i = 0; i < 2 && daysBetween(today, date) < 0; i++) {
-      date = shiftDateStr(date, 7);
-    }
-    if (daysBetween(today, date) >= 0) plan = { date, meal };
+  if (!date || !meal) return null;
+
+  // Walk it forward a week at a time; still past after two, it was misheard —
+  // drop the plan, keep the recipe, and let them pick a day on the Plan tab.
+  for (let i = 0; i < 2 && daysBetween(today, date) < 0; i++) {
+    date = shiftDateStr(date, 7);
   }
 
-  return { recipe, plan };
+  return daysBetween(today, date) >= 0 ? { date, meal } : null;
 }

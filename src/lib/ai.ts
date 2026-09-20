@@ -9,6 +9,7 @@ import type {
 import { toLocalDateStr } from "@/lib/utils";
 import { classifyEntry } from "@/lib/classify-entry";
 import { screenDiet } from "@/lib/diet-check";
+import { resolveSlot } from "@/lib/plan-slot";
 import { parseDictatedRecipe, type DictatedRecipe } from "@/lib/recipes";
 import {
   attributeEntries,
@@ -715,7 +716,14 @@ export async function extractDictatedRecipe(
   const today = toLocalDateStr();
   const weekday = new Date().toLocaleDateString(undefined, { weekday: "long" });
 
-  const message = await anthropic.messages.create({
+  // In flight while the recipe is written. It settles the day part by picking
+  // from a list of days code built forward from today, which is what the
+  // prompt's "resolve FORWARD, always" rule below has been asking the model to
+  // do in words — and what parseDictatedRecipe has been repairing afterwards
+  // when it did not.
+  const slotting = resolveSlot(rawInput, today);
+
+  const generating = anthropic.messages.create({
     model: MODEL,
     // One recipe with a full written method. Generous, because a truncated
     // answer here is a half-written method; see assertComplete.
@@ -748,9 +756,11 @@ ${rawInput}
     ],
   });
 
+  const [message, slot] = await Promise.all([generating, slotting]);
+
   assertComplete(message, "That recipe");
   const text = textFrom(message);
   if (!text) throw new Error("The model returned no recipe. Try again.");
 
-  return parseDictatedRecipe(JSON.parse(text), today);
+  return parseDictatedRecipe(JSON.parse(text), today, slot);
 }

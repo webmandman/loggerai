@@ -1,8 +1,8 @@
 /**
- * Live evals for the five TypeSafe judgments.
+ * Live evals for the six TypeSafe judgments.
  *
- *   npm run eval              all five
- *   npm run eval -- intent    one of: diet | pantry | intent | attribution | entry
+ *   npm run eval              all six
+ *   npm run eval -- intent    one of: diet, pantry, intent, attribution, entry, slot
  *
  * These call the real API and cost real tokens, which is why they are not in
  * `npm test`. Run them when the model version moves, when a question's wording
@@ -25,6 +25,8 @@ import { matchKey } from "../src/lib/normalize.ts";
 import { resolveKeys } from "../src/lib/pantry-match.ts";
 import { attributeEntries } from "../src/lib/query-stream.ts";
 import { classifyEntry, type Mood } from "../src/lib/classify-entry.ts";
+import { buildSlotQuestions, readSlot, upcomingDays } from "../src/lib/plan-slot.ts";
+import { TypeSafeClient } from "@typesafe-ai/sdk";
 import type { Category, Recipe, RecipeOptions } from "../src/types/index.ts";
 
 interface Row {
@@ -379,6 +381,65 @@ async function entryEval(): Promise<number> {
   return report("Entry classification — category and mood", rows);
 }
 
+// --- plan slot -----------------------------------------------------------
+
+/**
+ * The day part of a dictated recipe.
+ *
+ * Anchored to a fixed Saturday rather than the real today, so the expected
+ * answers stay true whenever this is run. The cases that matter are the
+ * weekday names: those are what the old arrangement resolved backwards, into
+ * the Monday just gone, and had to be walked forward afterwards.
+ */
+const SLOT_TODAY = "2026-09-19"; // a Saturday
+const SLOT_DAYS = upcomingDays(SLOT_TODAY);
+
+const SPOKEN_SLOTS: Array<{ said: string; want: string }> = [
+  { said: "save this for Monday's dinner", want: "2026-09-21/dinner" },
+  { said: "we'll have it tomorrow", want: "2026-09-20/dinner" },
+  { said: "this is for tonight", want: `${SLOT_TODAY}/dinner` },
+  { said: "let's do it Friday lunch", want: "2026-09-25/lunch" },
+  { said: "for Sunday breakfast", want: "2026-09-20/breakfast" },
+  // Today IS Saturday, so "Saturday" means today, not a week away.
+  { said: "saturday dinner", want: `${SLOT_TODAY}/dinner` },
+  // A meal with no day is today; a day with no meal is dinner.
+  { said: "this one's for breakfast", want: `${SLOT_TODAY}/breakfast` },
+  { said: "keep this for Wednesday", want: "2026-09-23/dinner" },
+  // Two slots named: the first wins.
+  { said: "dinner tomorrow, or maybe lunch on Thursday", want: "2026-09-20/dinner" },
+  // No slot at all — the recipe saves without a plan.
+  { said: "just save the recipe", want: "(no plan)" },
+];
+
+async function slotEval(): Promise<number> {
+  const client = new TypeSafeClient({ timeout: 20000 });
+  const questions = buildSlotQuestions(SLOT_DAYS);
+
+  const rows = await Promise.all(
+    SPOKEN_SLOTS.map(async ({ said, want }) => {
+      const { answers } = await client.systemOne({
+        state: { dictation: said, today: SLOT_DAYS[0].said },
+        questions,
+      });
+      const slot = readSlot(answers, SLOT_DAYS, SLOT_TODAY);
+
+      return {
+        label: said,
+        want,
+        got: slot ? `${slot.date}/${slot.meal}` : slot === null ? "(no plan)" : "(unavailable)",
+      };
+    })
+  );
+
+  // The guarantee, restated against whatever came back: nothing can land in
+  // the past, because nothing in the past was ever on the ballot.
+  const past = rows.filter((r) => r.got.includes("-") && r.got.slice(0, 10) < SLOT_TODAY);
+
+  return (
+    report(`Plan slot — spoken days against ${SLOT_TODAY}, a Saturday`, rows) + past.length
+  );
+}
+
 // --- runner --------------------------------------------------------------
 
 const EVALS = {
@@ -387,6 +448,7 @@ const EVALS = {
   intent: intentEval,
   attribution: attributionEval,
   entry: entryEval,
+  slot: slotEval,
 };
 
 const asked = process.argv.slice(2).filter((a) => a in EVALS) as Array<keyof typeof EVALS>;
